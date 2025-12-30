@@ -324,8 +324,8 @@ fn write_refinement_section(
     if heuristic_metrics.alignment_area == final_metrics.alignment_area {
         writeln!(
             writer,
-            "The solution found with the heuristic method is identical to the \
-             one determined by the optimal branch-and-bound algorithm. The alignment \
+            "The solution found with the heuristic method is optimal, as \
+             one determined by the branch-and-bound algorithm. The alignment \
              area remains {}.\n",
             heuristic_metrics.alignment_area
         )

@@ -63,7 +63,7 @@ maxalign-rs [OPTIONS] [INPUT] [OUTPUT]
 |--------|-------------|---------|
 | `-m`, `--heuristic-method` | Heuristic method: 1 (no synergy), 2 (pairwise synergy), 3 (three-way synergy) | `2` |
 | `-i`, `--max-iterations` | Maximum number of iterations (-1 for unlimited) | `-1` |
-| `-o`, `--refinement` | Perform refinement using the optimal branch-and-bound algorithm | off |
+| `-o`, `--refinement` | Perform refinement using the branch-and-bound algorithm to find the optimal solution | off |
 | `-t`, `--improvement-threshold` | Stop iterating if the relative improvement is below this threshold | `0.0` |
 | `-s`, `--excluded-seqs-threshold` | Stop iterating if the fraction of excluded sequences is above this threshold | `1.0` |
 | `-k`, `--keep-sequence` | Sequence to always retain (can be specified multiple times) | |
@@ -110,7 +110,7 @@ maxalign-rs input.fasta output.fasta -m 3
 
 ### Ensure maximal alignment area
 
-While the heuristic algorithms are fast and find the optimal solution in approximately 98% of cases, you can use the branch-and-bound algorithm to guarantee finding the absolute best solution. The branch-and-bound algorithm exhaustively searches through all possible combinations of sequence removals to find the truly optimal solution.
+While the heuristic algorithms are fast and find the optimal solution in most cases, you can use the branch-and-bound algorithm to guarantee finding the absolute best solution. The branch-and-bound algorithm exhaustively searches through all possible combinations of sequence removals to find the truly optimal solution.
 
 When `-o` is specified, `maxalign-rs` first runs the heuristic algorithm to get a good solution quickly, then applies the branch-and-bound algorithm to verify whether this solution is optimal or to find a better one if it exists:
 

@@ -69,7 +69,7 @@ struct Cli {
     #[arg(short = 'i', long, default_value = "-1", value_parser = parse_max_iterations)]
     max_iterations: u32,
 
-    /// Perform refinement using the optimal branch-and-bound algorithm
+    /// Perform refinement using the branch-and-bound algorithm to find the optimal solution
     #[arg(short = 'o', long, default_value = "false")]
     refinement: bool,
 
@@ -210,7 +210,7 @@ fn run(cli: &Cli) -> Result<()> {
     let mut final_metrics = metrics;
 
     if cli.refinement {
-        info!("Starting refinement using the optimal branch-and-bound algorithm");
+        info!("Starting refinement using the branch-and-bound algorithm to find the optimal solution");
         let bb_result = run_branch_and_bound(
             &orig_sets,
             &orig_gaps,
