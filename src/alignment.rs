@@ -7,6 +7,11 @@
 use crate::bitops::{bitwise_or_assign, count_bits, set_bit};
 use std::collections::{HashMap, HashSet};
 
+#[inline]
+pub const fn is_gap_char(byte: u8) -> bool {
+    byte == b'-' || byte == b'.'
+}
+
 /// Holds the current state of set data during optimization.
 #[derive(Clone)]
 pub struct SetData {
@@ -63,7 +68,7 @@ pub fn create_gap_matrix(sequences: &[Vec<u8>], alignment_length: usize) -> Vec<
         .map(|seq| {
             let mut row = vec![true; alignment_length];
             for (col_idx, &byte) in seq.iter().enumerate() {
-                if byte != b'-' {
+                if !is_gap_char(byte) {
                     row[col_idx] = false;
                 }
             }
@@ -279,7 +284,7 @@ pub fn remove_all_gap_columns(
     let mut gap_columns = vec![true; seq_len];
     for &idx in &included_indices {
         for (pos, &byte) in sequences[idx].iter().enumerate() {
-            if byte != b'-' {
+            if !is_gap_char(byte) {
                 gap_columns[pos] = false;
             }
         }
