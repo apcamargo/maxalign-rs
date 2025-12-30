@@ -1,0 +1,20 @@
+[package]
+name = "maxalign-rs"
+version = "0.1.0"
+authors = [ "Antonio Camargo" ]
+edition = "2024"
+description = "A Rust reimplementation of the MaxAlign algorithm for optimizing multiple sequence alignments by maximizing the alignment area"
+readme = "README.md"
+homepage = "https://github.com/apcamargo/maxalign-rs"
+repository = "https://github.com/apcamargo/maxalign-rs"
+license = "GPL-3.0-only"
+
+[dependencies]
+clap = { version = "4.5.53", features = ["derive", "wrap_help"] }
+clio = { version = "0.3.5", features = ["clap-parse"] }
+env_logger = "0.11.8"
+itertools = "0.14.0"
+log = "0.4.29"
+markdown-tables = "0.1.0"
+needletail = "0.6.3"
+thiserror = "2.0.17"
