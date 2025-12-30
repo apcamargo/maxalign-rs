@@ -38,7 +38,7 @@ MaxAlign automates this optimization process by iteratively identifying and remo
 
 ## Installation
 
-`maxalign-rs` binaries are available for download in the [releases](https://github.com/apcamargo/maxalign-rs/releases/) section of this repository. Alternatively, you can install it from Bioconda using Pixi:
+`maxalign-rs` binaries are available for download in the [releases](https://github.com/apcamargo/maxalign-rs/releases/) section of this repository. Alternatively, you can install it from Bioconda using [Pixi](https://pixi.sh/):
 
 ```sh
 pixi global install -c bioconda maxalign-rs
