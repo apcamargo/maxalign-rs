@@ -11,27 +11,27 @@ Gaps in sequence alignments can be problematic for some analyses. In phylogeneti
 Consider this alignment:
 
 ```
-            │ 1   2   3   4   5   6   7   8
-────────────┼──────────────────────────────
-Sequence A  │ -   -   -   A   C   C   t   a
-Sequence B  │ -   -   -   A   C   C   t   a
-Sequence C  │ g   g   t   A   C   C   g   a
-Sequence D  │ g   g   t   A   G   G   -   -
-Sequence E  │ c   g   t   A   C   G   g   -
-Sequence F  │ t   g   a   A   T   G   c   a
-Sequence G  │ t   g   t   A   C   G   c   a
+            │ 1   2   3   4   5   6   7   8   9
+────────────┼──────────────────────────────────
+Sequence A  │ -   T   -   -   A   C   C   t   a
+Sequence B  │ -   T   -   -   A   C   C   t   a
+Sequence C  │ g   A   g   t   A   C   C   g   a
+Sequence D  │ g   A   g   t   A   G   G   -   -
+Sequence E  │ c   T   g   t   A   C   G   g   -
+Sequence F  │ t   A   g   a   A   T   G   c   a
+Sequence G  │ t   A   g   t   A   C   G   c   a
 ```
 
-Only columns 4, 5, and 6 are gap-free, giving an alignment area of 21 (3 columns × 7 sequences). If sequences A and B are removed, columns 1-6 become gap-free, increasing the alignment area to 30 (6 columns × 5 sequences).
+Only columns 2, 5, 6, and 7 are gap-free, giving an alignment area of 28 (4 columns × 7 sequences). If sequences A and B are removed, columns 1–7 become gap-free, increasing the alignment area to 35 (7 columns × 5 sequences).
 
 ```
-            │ 1   2   3   4   5   6   7   8
-────────────┼──────────────────────────────
-Sequence C  │ G   G   T   A   C   C   g   a
-Sequence D  │ G   G   T   A   G   G   -   -
-Sequence E  │ C   G   T   A   C   G   g   -
-Sequence F  │ T   G   A   A   T   G   c   a
-Sequence G  │ T   G   T   A   C   G   c   a
+            │ 1   2   3   4   5   6   7   8   9
+────────────┼──────────────────────────────────
+Sequence C  │ G   A   G   T   A   C   C   g   a
+Sequence D  │ G   A   G   T   A   G   G   -   -
+Sequence E  │ C   T   G   T   A   C   G   g   -
+Sequence F  │ T   A   G   A   A   T   G   c   a
+Sequence G  │ T   A   G   T   A   C   G   c   a
 ```
 
 MaxAlign automates this optimization process by iteratively identifying and removing sequences whose exclusion maximizes the resulting alignment area. For more details, refer to the [documentation](https://services.healthtech.dtu.dk/services/MaxAlign-1.1/) of the original implementation or to the associated [publication](https://doi.org/10.1186/1471-2105-8-312).
