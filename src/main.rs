@@ -210,7 +210,9 @@ fn run(cli: &Cli) -> Result<()> {
     let mut final_metrics = metrics;
 
     if cli.refinement {
-        info!("Starting refinement using the branch-and-bound algorithm to find the optimal solution");
+        info!(
+            "Starting refinement using the branch-and-bound algorithm to find the optimal solution"
+        );
         let bb_result = run_branch_and_bound(
             &orig_sets,
             &orig_gaps,
