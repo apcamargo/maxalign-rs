@@ -321,7 +321,20 @@ fn write_refinement_section(
 
     writeln!(writer, "## Refinement\n").map_err(write_err!(path))?;
 
-    if heuristic_metrics.alignment_area == final_metrics.alignment_area {
+    if heuristic_metrics.alignment_area == final_metrics.alignment_area
+        && final_metrics.sequence_count > heuristic_metrics.sequence_count
+    {
+        writeln!(
+            writer,
+            "The heuristic solution was improved by the branch-and-bound algorithm. \
+             The alignment area remains {}, while the number of retained sequences \
+             increased from {} to {}.\n",
+            final_metrics.alignment_area,
+            heuristic_metrics.sequence_count,
+            final_metrics.sequence_count
+        )
+        .map_err(write_err!(path))
+    } else if heuristic_metrics.alignment_area == final_metrics.alignment_area {
         writeln!(
             writer,
             "The solution found with the heuristic method is optimal, as \

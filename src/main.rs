@@ -220,7 +220,12 @@ fn run(cli: &Cli) -> Result<()> {
             &keep_pattern,
             num_sequences,
         );
-        if bb_result.metrics.alignment_area > final_metrics.alignment_area {
+        let bb_objective = (
+            bb_result.metrics.alignment_area,
+            bb_result.metrics.sequence_count,
+        );
+        let final_objective = (final_metrics.alignment_area, final_metrics.sequence_count);
+        if bb_objective > final_objective {
             final_metrics = bb_result.metrics;
             final_excluded = bb_result.excluded;
         }
