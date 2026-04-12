@@ -48,6 +48,35 @@ pub struct HeuristicConfig {
     pub excluded_seqs_threshold: f64,
 }
 
+/// Returns whether excluding `excluded_count` sequences is allowed under the
+/// configured threshold.
+#[must_use]
+#[allow(clippy::cast_precision_loss)]
+pub fn is_excluded_count_allowed(
+    excluded_count: usize,
+    num_orig_seqs: usize,
+    excluded_seqs_threshold: f64,
+) -> bool {
+    num_orig_seqs == 0
+        || excluded_seqs_threshold >= 1.0
+        || (excluded_count as f64 / num_orig_seqs as f64) <= excluded_seqs_threshold
+}
+
+/// Returns the maximum number of excluded sequences allowed by the threshold.
+#[must_use]
+pub fn max_allowed_excluded_count(
+    num_orig_seqs: usize,
+    excluded_seqs_threshold: f64,
+) -> Option<usize> {
+    if num_orig_seqs == 0 || excluded_seqs_threshold >= 1.0 {
+        return None;
+    }
+
+    (0..=num_orig_seqs).rfind(|&excluded_count| {
+        is_excluded_count_allowed(excluded_count, num_orig_seqs, excluded_seqs_threshold)
+    })
+}
+
 /// Runs the heuristic algorithm to find sequences to exclude.
 #[allow(clippy::cast_precision_loss)]
 pub fn run_heuristic(
@@ -118,11 +147,16 @@ pub fn run_heuristic(
             }
         }
 
-        let excluded_fraction = state.excluded.len() as f64 / num_orig_seqs as f64;
-        if excluded_fraction >= config.excluded_seqs_threshold {
+        let next_excluded_count = state.excluded.len() + count_bits(&best_set);
+        if !is_excluded_count_allowed(
+            next_excluded_count,
+            num_orig_seqs,
+            config.excluded_seqs_threshold,
+        ) {
+            let next_excluded_fraction = next_excluded_count as f64 / num_orig_seqs as f64;
             info!(
-                "Early stopping: excluded sequence fraction ({:.4}) reached threshold ({:.4})",
-                excluded_fraction, config.excluded_seqs_threshold
+                "Early stopping: excluding more sequences would exceed the threshold ({:.4} > {:.4})",
+                next_excluded_fraction, config.excluded_seqs_threshold
             );
             break;
         }

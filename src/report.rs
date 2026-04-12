@@ -320,15 +320,21 @@ fn write_refinement_section(
     }
 
     writeln!(writer, "## Refinement\n").map_err(write_err!(path))?;
+    let bounded_refinement = config.excluded_seqs_threshold < 1.0;
 
     if heuristic_metrics.alignment_area == final_metrics.alignment_area
         && final_metrics.sequence_count > heuristic_metrics.sequence_count
     {
         writeln!(
             writer,
-            "The heuristic solution was improved by the branch-and-bound algorithm. \
+            "The heuristic solution was improved by the branch-and-bound algorithm{}. \
              The alignment area remains {}, while the number of retained sequences \
              increased from {} to {}.\n",
+            if bounded_refinement {
+                " within the configured excluded-sequence threshold"
+            } else {
+                ""
+            },
             final_metrics.alignment_area,
             heuristic_metrics.sequence_count,
             final_metrics.sequence_count
@@ -337,18 +343,33 @@ fn write_refinement_section(
     } else if heuristic_metrics.alignment_area == final_metrics.alignment_area {
         writeln!(
             writer,
-            "The solution found with the heuristic method is optimal, as \
-             one determined by the branch-and-bound algorithm. The alignment \
-             area remains {}.\n",
+            "The solution found with the heuristic method is optimal{}{}. \
+             The alignment area remains {}.\n",
+            if bounded_refinement {
+                " within the configured excluded-sequence threshold"
+            } else {
+                ""
+            },
+            if bounded_refinement {
+                ""
+            } else {
+                ", matching the one determined by the branch-and-bound algorithm"
+            },
             heuristic_metrics.alignment_area
         )
         .map_err(write_err!(path))
     } else {
         writeln!(
             writer,
-            "The heuristic solution was improved by the branch-and-bound algorithm. \
+            "The heuristic solution was improved by the branch-and-bound algorithm{}. \
              The alignment area increased from {} to {}.\n",
-            heuristic_metrics.alignment_area, final_metrics.alignment_area
+            if bounded_refinement {
+                " within the configured excluded-sequence threshold"
+            } else {
+                ""
+            },
+            heuristic_metrics.alignment_area,
+            final_metrics.alignment_area
         )
         .map_err(write_err!(path))
     }

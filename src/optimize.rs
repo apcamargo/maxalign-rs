@@ -18,7 +18,8 @@ pub struct BranchAndBoundResult {
     pub excluded: HashSet<usize>,
 }
 
-/// Runs the branch-and-bound algorithm to find the optimal solution.
+/// Runs the branch-and-bound algorithm to find the optimal solution, optionally
+/// bounded by a maximum number of excluded sequences.
 #[must_use]
 pub fn run_branch_and_bound(
     orig_sets: &[Vec<u8>],
@@ -26,9 +27,23 @@ pub fn run_branch_and_bound(
     metrics: &AlignmentMetrics,
     keep_pattern: &[bool],
     num_sequences: usize,
+    max_excluded: Option<usize>,
 ) -> BranchAndBoundResult {
     let kept_gaps = keep_pattern.iter().filter(|&&b| b).count();
     let gap_free_columns = metrics.alignment_length - orig_sets.len() - kept_gaps;
+    let original_area = gap_free_columns * num_sequences;
+
+    if max_excluded == Some(0) {
+        return BranchAndBoundResult {
+            metrics: AlignmentMetrics::new(
+                num_sequences,
+                gap_free_columns,
+                original_area,
+                metrics.alignment_length,
+            ),
+            excluded: HashSet::new(),
+        };
+    }
 
     let bb_state_excluded = HashSet::new();
     let bb_state_translation: Vec<usize> = (0..num_sequences).collect();
@@ -81,6 +96,7 @@ pub fn run_branch_and_bound(
         metrics.alignment_area,
         gap_free_columns,
         num_sequences,
+        max_excluded,
     );
 
     extract_best_solution(solutions, best_area, num_sequences, metrics)
@@ -94,6 +110,7 @@ fn branch_and_bound_search(
     initial_best_area: usize,
     gap_free_columns: usize,
     num_sequences: usize,
+    max_excluded: Option<usize>,
 ) -> (usize, Vec<Vec<u8>>) {
     let sets_count = ordered_sets.len();
     let gap_vec_len = ordered_gaps.first().map_or(1, Vec::len);
@@ -115,12 +132,18 @@ fn branch_and_bound_search(
     let mut best_area = initial_best_area;
 
     let union_sets_count_bits = |union_sets: &[u8]| count_bits(union_sets);
+    let max_excluded = max_excluded.unwrap_or(num_sequences);
 
     while let Some((mut decisions, mut pointer, mut union_sets, mut union_gaps)) = stack.pop() {
         loop {
+            let current_excluded = union_sets_count_bits(&union_sets);
+            if current_excluded > max_excluded {
+                break;
+            }
+
             let test_union_gaps_count = count_bits_union(&union_gaps, &suffix_unions[pointer]);
-            let test_score = (gap_free_columns + test_union_gaps_count)
-                * (num_sequences - union_sets_count_bits(&union_sets));
+            let test_score =
+                (gap_free_columns + test_union_gaps_count) * (num_sequences - current_excluded);
 
             if test_score < best_area {
                 break;
@@ -149,6 +172,10 @@ fn branch_and_bound_search(
                     union_sets.clone(),
                     union_gaps.clone(),
                 ));
+
+                if union_sets_count_bits(&union_and_set) > max_excluded {
+                    break;
+                }
 
                 decisions[pointer] = EXCLUDED;
                 union_sets = union_and_set;

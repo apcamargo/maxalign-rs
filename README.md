@@ -62,10 +62,10 @@ maxalign-rs [OPTIONS] [INPUT] [OUTPUT]
 | Option | Description | Default |
 |--------|-------------|---------|
 | `-m`, `--heuristic-method` | Heuristic method: 1 (no synergy), 2 (pairwise synergy), 3 (three-way synergy) | `2` |
-| `-i`, `--max-iterations` | Maximum number of iterations (-1 for unlimited) | `-1` |
-| `-o`, `--refinement` | Perform refinement using the branch-and-bound algorithm to find the optimal solution | off |
-| `-t`, `--improvement-threshold` | Stop iterating if the relative improvement is below this threshold | `0.0` |
-| `-s`, `--excluded-seqs-threshold` | Stop iterating if the fraction of excluded sequences is above this threshold | `1.0` |
+| `-i`, `--max-iterations` | Maximum number of heuristic iterations (-1 for unlimited) | `-1` |
+| `-o`, `--refinement` | Perform branch-and-bound refinement; incompatible with explicit `-i` and `-t` | off |
+| `-t`, `--improvement-threshold` | Stop heuristic iterations if the relative improvement is below this threshold | `0.0` |
+| `-s`, `--excluded-seqs-threshold` | Stop if excluding more sequences would make the excluded fraction exceed this threshold; also bounds refinement | `1.0` |
 | `-k`, `--keep-sequence` | Sequence to always retain (can be specified multiple times) | |
 | `-r`, `--report` | Report file path | |
 | `--retained-sequences` | Write a list of retained sequences to file | |
@@ -120,16 +120,24 @@ maxalign-rs input.fasta output.fasta -o
 
 Keep in mind that this algorithm performs an exhaustive search and will be very slow for large alignments.
 
-### Limit sequence removal
-
-You can limit the number of sequences removed during optimization by stopping the process early based on two criteria: the fraction of sequences excluded from the alignment (`-s`), and the relative improvement in alignment area between iterations (`-t`). The process stops early if the excluded fraction exceeds a specified threshold or if the relative improvement falls below a specified threshold.
+`-o` cannot be combined with explicit `-i` or `-t`. You can combine `-o` with `-s` to search for the best solution that stays within the excluded-sequence threshold:
 
 ```sh
-# Stops iterating if more than 20% of sequences would be excluded
+maxalign-rs input.fasta output.fasta -o -s 0.2
+```
+
+### Limit sequence removal
+
+You can limit the number of sequences removed during optimization by stopping the process early based on two criteria: the fraction of sequences excluded from the alignment (`-s`), and the relative improvement in alignment area between iterations (`-t`). The process stops early if excluding more sequences would exceed the specified `-s` threshold, or if the relative improvement falls below the specified `-t` threshold.
+
+```sh
+# Stops iterating if excluding more than 20% of sequences would be required
 maxalign-rs input.fasta output.fasta -s 0.2
 # Stop iterating if relative improvement between iterations is less than 1%
 maxalign-rs input.fasta output.fasta -t 0.01
 ```
+
+When used together with `-o`, `-s` bounds the branch-and-bound refinement as well.
 
 ### Protect sequences from removal
 

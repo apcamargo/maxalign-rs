@@ -12,7 +12,9 @@ use crate::alignment::{
 };
 use crate::error::{Error, Result};
 use crate::fasta::parse_fasta;
-use crate::heuristic::{HeuristicConfig, HeuristicMethod, run_heuristic};
+use crate::heuristic::{
+    HeuristicConfig, HeuristicMethod, max_allowed_excluded_count, run_heuristic,
+};
 use crate::optimize::run_branch_and_bound;
 use crate::output::{write_fasta, write_headers_list};
 use crate::report::{ReportConfig, ReportData, write_report};
@@ -65,19 +67,23 @@ struct Cli {
     #[arg(short = 'm', long, default_value = "2", value_parser = clap::value_parser!(HeuristicMethod))]
     heuristic_method: HeuristicMethod,
 
-    /// Maximum number of iterations (-1 for unlimited iterations)
+    /// Maximum number of heuristic iterations (-1 for unlimited iterations)
     #[arg(short = 'i', long, default_value = "-1", value_parser = parse_max_iterations)]
     max_iterations: u32,
 
-    /// Perform refinement using the branch-and-bound algorithm to find the optimal solution
-    #[arg(short = 'o', long, default_value = "false")]
+    /// Perform branch-and-bound refinement; incompatible with --max-iterations and --improvement-threshold
+    #[arg(
+        short = 'o',
+        long,
+        conflicts_with_all(["max_iterations", "improvement_threshold"])
+    )]
     refinement: bool,
 
-    /// Stop iterating if the relative improvement is below this threshold
+    /// Stop heuristic iterations if the relative improvement is below this threshold
     #[arg(short = 't', long, default_value = "0.0", value_parser = parse_threshold)]
     improvement_threshold: f64,
 
-    /// Stop iterating if the fraction of excluded sequences is above this threshold
+    /// Stop if excluding more sequences would make the excluded fraction exceed this threshold
     #[arg(short = 's', long, default_value = "1.0", value_parser = parse_threshold)]
     excluded_seqs_threshold: f64,
 
@@ -208,17 +214,27 @@ fn run(cli: &Cli) -> Result<()> {
     let heuristic_metrics = metrics.clone();
     let mut final_excluded = state.excluded.clone();
     let mut final_metrics = metrics;
+    let refinement_max_excluded =
+        max_allowed_excluded_count(num_sequences, cli.excluded_seqs_threshold);
 
     if cli.refinement {
-        info!(
-            "Starting refinement using the branch-and-bound algorithm to find the optimal solution"
-        );
+        if let Some(max_excluded) = refinement_max_excluded {
+            info!(
+                "Starting refinement using the branch-and-bound algorithm within the excluded-sequence threshold (at most {} sequence(s) excluded)",
+                max_excluded
+            );
+        } else {
+            info!(
+                "Starting refinement using the branch-and-bound algorithm to find the optimal solution"
+            );
+        }
         let bb_result = run_branch_and_bound(
             &orig_sets,
             &orig_gaps,
             &heuristic_metrics,
             &keep_pattern,
             num_sequences,
+            refinement_max_excluded,
         );
         let bb_objective = (
             bb_result.metrics.alignment_area,
