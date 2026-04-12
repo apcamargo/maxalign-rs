@@ -30,23 +30,6 @@ pub fn set_bit(vec: &mut [u8], position: usize) {
     }
 }
 
-/// Packs a slice of booleans into a bit-packed byte vector.
-#[must_use]
-pub fn pack_bools_to_bits(bools: &[bool]) -> Vec<u8> {
-    bools
-        .chunks(BITS_PER_BYTE)
-        .map(|chunk| {
-            let mut byte = 0u8;
-            for (i, &b) in chunk.iter().enumerate() {
-                if b {
-                    byte |= 1 << i;
-                }
-            }
-            byte
-        })
-        .collect()
-}
-
 /// Returns the indices of all set bits in a bit-packed byte vector.
 #[must_use]
 pub fn get_set_bit_indices(bytes: &[u8], count: usize) -> Vec<usize> {

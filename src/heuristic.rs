@@ -2,8 +2,7 @@
 
 use crate::alignment::{AlignmentMetrics, SetData, congruent_set_joining, subset_joining};
 use crate::bitops::{
-    bitwise_or, count_bits, count_bits_union, count_bits_union_triple, get_set_bit_indices,
-    pack_bools_to_bits,
+    bitwise_or, count_bits, count_bits_union, count_bits_union_triple, get_set_bit_indices, set_bit,
 };
 use log::info;
 use std::collections::HashSet;
@@ -251,29 +250,36 @@ pub fn create_working_sets(
     translation: &[usize],
     num_orig_seqs: usize,
 ) -> (Vec<Vec<u8>>, Vec<Vec<u8>>) {
+    if excluded.is_empty()
+        && translation.len() == num_orig_seqs
+        && translation
+            .iter()
+            .enumerate()
+            .all(|(idx, &orig_idx)| idx == orig_idx)
+    {
+        return (orig_sets.to_vec(), orig_gaps.to_vec());
+    }
+
     let mut working_sets = Vec::new();
     let mut working_gaps = Vec::new();
-
-    let included: Vec<bool> = (0..num_orig_seqs)
-        .map(|idx| !excluded.contains(&idx))
-        .collect();
+    let compact_bytes = translation.len().div_ceil(8);
 
     for (i, orig_set) in orig_sets.iter().enumerate() {
-        let mut bools = Vec::with_capacity(translation.len());
+        let mut projected_set = vec![0u8; compact_bytes];
         let mut has_any_gap = false;
 
-        for (idx, &is_included) in included.iter().enumerate() {
-            if is_included {
-                let byte_idx = idx / 8;
-                let bit_idx = idx % 8;
-                let is_gap = byte_idx < orig_set.len() && (orig_set[byte_idx] >> bit_idx) & 1 == 1;
-                bools.push(is_gap);
-                has_any_gap |= is_gap;
+        for (compact_idx, &orig_idx) in translation.iter().enumerate() {
+            let byte_idx = orig_idx / 8;
+            let bit_idx = orig_idx % 8;
+            let is_gap = byte_idx < orig_set.len() && (orig_set[byte_idx] >> bit_idx) & 1 == 1;
+            if is_gap {
+                set_bit(&mut projected_set, compact_idx);
+                has_any_gap = true;
             }
         }
 
         if has_any_gap {
-            working_sets.push(pack_bools_to_bits(&bools));
+            working_sets.push(projected_set);
             working_gaps.push(orig_gaps[i].clone());
         }
     }

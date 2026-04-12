@@ -170,21 +170,21 @@ pub fn congruent_set_joining(
 
 /// Propagates gap column benefits from subsets to their supersets.
 pub fn subset_joining(sets: &[Vec<u8>], gaps: &mut [Vec<u8>]) {
-    let mut merges: Vec<(usize, Vec<u8>)> = Vec::new();
-
-    for i in 0..sets.len() {
-        for j in 0..sets.len() {
-            if i == j {
-                continue;
-            }
-            if is_subset_of(&sets[j], &sets[i]) {
-                merges.push((i, gaps[j].clone()));
-            }
-        }
+    if sets.len() < 2 {
+        return;
     }
 
-    for (target_idx, source_gap) in merges {
-        bitwise_or_assign(&mut gaps[target_idx], &source_gap);
+    let snapshot = gaps.to_vec();
+
+    for i in 0..sets.len() {
+        for j in i + 1..sets.len() {
+            if is_subset_of(&sets[j], &sets[i]) {
+                bitwise_or_assign(&mut gaps[i], &snapshot[j]);
+            }
+            if is_subset_of(&sets[i], &sets[j]) {
+                bitwise_or_assign(&mut gaps[j], &snapshot[i]);
+            }
+        }
     }
 }
 
