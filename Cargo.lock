@@ -388,7 +388,7 @@ checksum = "f998f870a6beaa1cab9f3bf2aa250bfa08a15f82c01108c2fbbc394ee315232a"
 
 [[package]]
 name = "maxalign-rs"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap",
  "clio",
