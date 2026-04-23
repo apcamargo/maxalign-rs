@@ -8,7 +8,7 @@ use itertools::Itertools;
 use markdown_tables::{MarkdownTableRow, as_table};
 use std::collections::HashSet;
 use std::io::{BufWriter, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 struct RunOption {
     option: String,
@@ -88,8 +88,8 @@ pub struct ReportConfig<'a> {
     pub excluded_seqs_threshold: f64,
     pub refinement: bool,
     pub keep_sequence: &'a [String],
-    pub retained_sequences: Option<String>,
-    pub excluded_sequences: Option<String>,
+    pub retained_sequences: Option<PathBuf>,
+    pub excluded_sequences: Option<PathBuf>,
 }
 
 /// Data for generating a report.
@@ -205,14 +205,14 @@ fn write_options_section(
     if let Some(ref retained) = config.retained_sequences {
         options.push(RunOption {
             option: "Retained sequences file".to_string(),
-            value: retained.clone(),
+            value: retained.display().to_string(),
         });
     }
 
     if let Some(ref excluded) = config.excluded_sequences {
         options.push(RunOption {
             option: "Excluded sequences file".to_string(),
-            value: excluded.clone(),
+            value: excluded.display().to_string(),
         });
     }
 

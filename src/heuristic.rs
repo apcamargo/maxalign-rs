@@ -4,8 +4,8 @@ use crate::alignment::{AlignmentMetrics, SetData, congruent_set_joining, subset_
 use crate::bitops::{
     bitwise_or, count_bits, count_bits_union, count_bits_union_triple, get_set_bit_indices, set_bit,
 };
-use log::info;
 use std::collections::HashSet;
+use tracing::{info, trace};
 
 /// The heuristic method to use for finding sequences to exclude.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -133,20 +133,31 @@ pub fn run_heuristic(
             gap_free_columns,
             config.method,
         );
+        let candidate_excluded_count = count_bits(&best_set);
+        trace!(
+            iteration = iterations_count + 1,
+            working_set_count = current_sets.len(),
+            sequence_count,
+            gap_free_columns,
+            candidate_excluded_count,
+            new_alignment_area,
+            area_delta = new_alignment_area.saturating_sub(metrics.alignment_area),
+            "Selected heuristic candidate"
+        );
 
         if config.improvement_threshold != 0.0 && metrics.alignment_area != 0 {
             let improvement = (new_alignment_area as f64 - metrics.alignment_area as f64)
                 / metrics.alignment_area as f64;
             if improvement < config.improvement_threshold {
                 info!(
-                    "Early stopping: relative improvement ({:.4}) is below threshold ({:.4})",
-                    improvement, config.improvement_threshold
+                    "Early stopping: relative improvement ({improvement:.4}) is below threshold ({:.4})",
+                    config.improvement_threshold
                 );
                 break;
             }
         }
 
-        let next_excluded_count = state.excluded.len() + count_bits(&best_set);
+        let next_excluded_count = state.excluded.len() + candidate_excluded_count;
         if !is_excluded_count_allowed(
             next_excluded_count,
             num_orig_seqs,
@@ -154,8 +165,8 @@ pub fn run_heuristic(
         ) {
             let next_excluded_fraction = next_excluded_count as f64 / num_orig_seqs as f64;
             info!(
-                "Early stopping: excluding more sequences would exceed the threshold ({:.4} > {:.4})",
-                next_excluded_fraction, config.excluded_seqs_threshold
+                "Early stopping: excluding more sequences would exceed the threshold ({next_excluded_fraction:.4} > {:.4})",
+                config.excluded_seqs_threshold
             );
             break;
         }

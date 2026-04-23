@@ -70,7 +70,8 @@ maxalign-rs [OPTIONS] [INPUT] [OUTPUT]
 | `-r`, `--report` | Report file path | |
 | `--retained-sequences` | Write a list of retained sequences to file | |
 | `--excluded-sequences` | Write a list of excluded sequences to file | |
-| `-v`, `--verbosity` | Verbosity level (`-v` for normal logging, `-vv` for detailed logging) | off |
+| `--log` | Write logs to file | |
+| `-v`, `--verbose` | Repeat to increase stderr logging verbosity (`-v` INFO, `-vv` DEBUG, `-vvv` TRACE) | ERROR and WARN |
 | `-h`, `--help` | Print help | |
 | `-V`, `--version` | Print version | |
 
@@ -108,6 +109,14 @@ maxalign-rs input.fasta output.fasta -m 1
 maxalign-rs input.fasta output.fasta -m 3
 ```
 
+### Write logs to a file
+
+Use `--log` to write logs to a file while honoring the verbosity level set with `-v`. When logging is enabled, only fatal errors are displayed in the terminal.
+
+```sh
+maxalign-rs input.fasta output.fasta --log logging.log -vv
+```
+
 ### Ensure maximal alignment area
 
 While the heuristic algorithms are fast and find the optimal solution in most cases, you can use the branch-and-bound algorithm to guarantee finding the absolute best solution. The branch-and-bound algorithm exhaustively searches through all possible combinations of sequence removals to find the truly optimal solution.
@@ -120,7 +129,7 @@ maxalign-rs input.fasta output.fasta -o
 
 Keep in mind that this algorithm performs an exhaustive search and will be very slow for large alignments.
 
-`-o` cannot be combined with explicit `-i` or `-t`. You can combine `-o` with `-s` to search for the best solution that stays within the excluded-sequence threshold:
+`-o` cannot be combined with explicitly supplied `-i`/`--max-iterations` or `-t`/`--improvement-threshold`. You can combine `-o` with `-s` to search for the best solution that stays within the excluded-sequence threshold:
 
 ```sh
 maxalign-rs input.fasta output.fasta -o -s 0.2

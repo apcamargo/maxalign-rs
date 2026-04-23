@@ -3,9 +3,9 @@
 use crate::error::{Error, Result};
 use clio::Input;
 use itertools::Itertools;
-use log::warn;
 use needletail::{parse_fastx_file, parse_fastx_stdin};
 use std::collections::HashSet;
+use tracing::warn;
 
 /// Extracts the accession (first word) from a FASTA header.
 pub fn get_record_accession_string(record_header: &[u8]) -> Option<String> {
@@ -88,10 +88,7 @@ pub fn parse_fasta(input: &Input, keep_sequence: &[String]) -> Result<SequenceDa
 
     for accession in keep_sequence {
         if !found_keep_sequence.contains(accession) {
-            warn!(
-                "Must-retain sequence '{}' was not found in the input alignment",
-                accession
-            );
+            warn!("Must-retain sequence '{accession}' was not found in the input alignment");
         }
     }
 

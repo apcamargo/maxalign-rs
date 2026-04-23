@@ -5,8 +5,8 @@ use crate::bitops::{
     bitwise_or, bitwise_or_assign, count_bits, count_bits_union, get_set_bit_indices,
 };
 use crate::heuristic::create_working_sets;
-use log::debug;
 use std::collections::HashSet;
+use tracing::{debug, trace};
 
 const UNDECIDED: u8 = b'X';
 const EXCLUDED: u8 = b'1';
@@ -16,6 +16,15 @@ const NOT_EXCLUDED: u8 = b'0';
 pub struct BranchAndBoundResult {
     pub metrics: AlignmentMetrics,
     pub excluded: HashSet<usize>,
+}
+
+#[derive(Default)]
+struct SearchStats {
+    nodes_visited: usize,
+    pruned_by_bound: usize,
+    pruned_by_excluded_limit: usize,
+    forced_exclusions: usize,
+    branch_points: usize,
 }
 
 /// Runs the branch-and-bound algorithm to find the optimal solution, optionally
@@ -88,6 +97,11 @@ pub fn run_branch_and_bound(
 
     let (ordered_sets, ordered_gaps, ordered_dislikes) =
         reorder_sets_for_search(&current_sets, &current_gaps, &dislikes);
+    trace!(
+        candidate_set_count = ordered_sets.len(),
+        max_excluded = ?max_excluded,
+        "Prepared refinement search"
+    );
 
     let (best_area, solutions) = branch_and_bound_search(
         &ordered_sets,
@@ -130,14 +144,17 @@ fn branch_and_bound_search(
 
     let mut solutions = Vec::new();
     let mut best_area = initial_best_area;
+    let mut stats = SearchStats::default();
 
     let union_sets_count_bits = |union_sets: &[u8]| count_bits(union_sets);
     let max_excluded = max_excluded.unwrap_or(num_sequences);
 
     while let Some((mut decisions, mut pointer, mut union_sets, mut union_gaps)) = stack.pop() {
         loop {
+            stats.nodes_visited += 1;
             let current_excluded = union_sets_count_bits(&union_sets);
             if current_excluded > max_excluded {
+                stats.pruned_by_excluded_limit += 1;
                 break;
             }
 
@@ -146,6 +163,7 @@ fn branch_and_bound_search(
                 (gap_free_columns + test_union_gaps_count) * (num_sequences - current_excluded);
 
             if test_score < best_area {
+                stats.pruned_by_bound += 1;
                 break;
             }
 
@@ -158,12 +176,14 @@ fn branch_and_bound_search(
                 let union_and_set = bitwise_or(&union_sets, set);
 
                 if union_and_set == union_sets {
+                    stats.forced_exclusions += 1;
                     bitwise_or_assign(&mut union_gaps, &ordered_gaps[pointer]);
                     decisions[pointer] = EXCLUDED;
                     pointer += 1;
                     continue;
                 }
 
+                stats.branch_points += 1;
                 let mut decisions_not_excluded = decisions.clone();
                 decisions_not_excluded[pointer] = NOT_EXCLUDED;
                 stack.push((
@@ -196,8 +216,7 @@ fn branch_and_bound_search(
                 best_area = score;
                 solutions = vec![union_sets.clone()];
                 debug!(
-                    "Refinement algorithm improved the alignment: the area increased to {} with {} sequences",
-                    best_area,
+                    "Refinement algorithm improved the alignment: the area increased to {best_area} with {} sequences",
                     num_sequences - count_bits(&union_sets)
                 );
             } else if score == best_area {
@@ -206,6 +225,17 @@ fn branch_and_bound_search(
             break;
         }
     }
+
+    trace!(
+        nodes_visited = stats.nodes_visited,
+        pruned_by_bound = stats.pruned_by_bound,
+        pruned_by_excluded_limit = stats.pruned_by_excluded_limit,
+        forced_exclusions = stats.forced_exclusions,
+        branch_points = stats.branch_points,
+        solution_count = solutions.len(),
+        best_area,
+        "Refinement search summary"
+    );
 
     (best_area, solutions)
 }

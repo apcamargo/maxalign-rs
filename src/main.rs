@@ -3,6 +3,7 @@ mod bitops;
 mod error;
 mod fasta;
 mod heuristic;
+mod logging;
 mod optimize;
 mod output;
 mod report;
@@ -23,18 +24,17 @@ use clap::{
     builder::styling::{AnsiColor, Style, Styles},
 };
 use clio::{Input, Output};
-use env_logger::Builder;
 use itertools::Itertools;
-use log::{LevelFilter, debug, info};
-use std::io::{IsTerminal, Write};
+use std::io::IsTerminal;
+use std::path::PathBuf;
 use std::process::ExitCode;
+use tracing::{debug, error, info};
 
 const STYLES: Styles = Styles::styled()
     .header(AnsiColor::Cyan.on_default().bold())
     .usage(AnsiColor::Yellow.on_default().bold())
     .literal(AnsiColor::Yellow.on_default().bold())
     .placeholder(Style::new().dimmed());
-
 fn parse_max_iterations(s: &str) -> std::result::Result<u32, String> {
     if s == "-1" {
         return Ok(u32::MAX);
@@ -93,33 +93,47 @@ struct Cli {
 
     /// Report file path
     #[arg(short = 'r', long)]
-    report: Option<String>,
+    report: Option<PathBuf>,
 
     /// Write a list of retained sequences to file
     #[arg(long)]
-    retained_sequences: Option<String>,
+    retained_sequences: Option<PathBuf>,
 
     /// Write a list of excluded sequences to file
     #[arg(long)]
-    excluded_sequences: Option<String>,
+    excluded_sequences: Option<PathBuf>,
 
-    /// Verbosity level (-v for normal logging, -vv for detailed logging)
+    /// Write logs to file
+    #[arg(long, value_name = "PATH")]
+    log: Option<PathBuf>,
+
+    /// Repeat to increase logging verbosity (-v INFO, -vv DEBUG, -vvv TRACE)
     #[arg(short = 'v', long, action = clap::ArgAction::Count)]
-    verbosity: u8,
+    verbose: u8,
 }
 
-fn setup_logging(verbosity: u8) {
-    let level = match verbosity {
-        0 => LevelFilter::Off,
-        1 => LevelFilter::Info,
-        2 => LevelFilter::Debug,
-        _ => LevelFilter::Trace,
-    };
+fn describe_input(input: &Input) -> String {
+    if input.is_std() {
+        "<stdin>".to_string()
+    } else {
+        input.path().to_string_lossy().into_owned()
+    }
+}
 
-    Builder::new()
-        .filter_level(level)
-        .format(|buf, record| writeln!(buf, "[{}] {}", buf.timestamp(), record.args()))
-        .init();
+fn describe_output(output: &Output) -> String {
+    if output.is_std() {
+        "<stdout>".to_string()
+    } else {
+        output.path().to_string_lossy().into_owned()
+    }
+}
+
+fn format_max_iterations(max_iterations: u32) -> String {
+    if max_iterations == u32::MAX {
+        "unlimited".to_string()
+    } else {
+        max_iterations.to_string()
+    }
 }
 
 #[allow(clippy::too_many_lines)]
@@ -130,6 +144,8 @@ fn run(cli: &Cli) -> Result<()> {
         return Ok(());
     }
 
+    let input_path = describe_input(&cli.input);
+    let output_path = describe_output(&cli.output);
     let sequence_data = match parse_fasta(&cli.input, &cli.keep_sequence) {
         Ok(data) => data,
         Err(Error::EmptyInput) if cli.input.is_std() => {
@@ -182,8 +198,11 @@ fn run(cli: &Cli) -> Result<()> {
     };
 
     info!(
-        "Processing alignment (heuristic method: {})",
-        cli.heuristic_method
+        "Starting heuristic optimization (method {}, max iterations {}, improvement threshold {:.4}, excluded-sequence threshold {:.4})",
+        cli.heuristic_method,
+        format_max_iterations(cli.max_iterations),
+        cli.improvement_threshold,
+        cli.excluded_seqs_threshold
     );
     let iteration_data = run_heuristic(
         &mut state,
@@ -275,31 +294,13 @@ fn run(cli: &Cli) -> Result<()> {
     }
 
     let mut output = cli.output.clone();
-    let output_name = if output.is_std() {
-        "stdout".to_string()
-    } else {
-        output.path().to_string_lossy().into_owned()
-    };
-
     write_fasta(&final_sequences, &final_headers, &mut output)?;
-    info!("Output written to {}", output_name);
+    info!("Output written to {output_path}");
 
     if let Some(ref report_path) = cli.report {
-        let input_path = if cli.input.is_std() {
-            "<stdin>".to_string()
-        } else {
-            cli.input.path().to_string_lossy().to_string()
-        };
-
-        let output_path = if cli.output.is_std() {
-            "<stdout>".to_string()
-        } else {
-            cli.output.path().to_string_lossy().to_string()
-        };
-
         let config = ReportConfig {
-            input_path,
-            output_path,
+            input_path: input_path.clone(),
+            output_path: output_path.clone(),
             heuristic_method: cli.heuristic_method,
             max_iterations: cli.max_iterations,
             improvement_threshold: cli.improvement_threshold,
@@ -320,16 +321,16 @@ fn run(cli: &Cli) -> Result<()> {
         };
 
         write_report(report_path, &config, &data)?;
-        info!("Report written to {}", report_path);
+        info!("Report written to {}", report_path.display());
     }
 
     if let Some(ref path) = cli.retained_sequences {
         write_headers_list(path, &sequence_data.headers, &final_excluded, true)?;
-        info!("List of retained sequences written to {}", path);
+        info!("List of retained sequences written to {}", path.display());
     }
     if let Some(ref path) = cli.excluded_sequences {
         write_headers_list(path, &sequence_data.headers, &final_excluded, false)?;
-        info!("List of excluded sequences written to {}", path);
+        info!("List of excluded sequences written to {}", path.display());
     }
 
     Ok(())
@@ -337,10 +338,14 @@ fn run(cli: &Cli) -> Result<()> {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    setup_logging(cli.verbosity);
+    if let Err(error) = logging::init(cli.verbose, cli.log.as_deref()) {
+        eprintln!("Error: failed to initialize logging: {error}");
+        return ExitCode::FAILURE;
+    }
 
     if let Err(e) = run(&cli) {
-        eprintln!("Error: {e}");
+        let message = format!("Command failed: {e}");
+        error!("{message}");
         ExitCode::FAILURE
     } else {
         ExitCode::SUCCESS
