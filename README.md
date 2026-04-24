@@ -59,21 +59,47 @@ maxalign-rs [OPTIONS] [INPUT] [OUTPUT]
 
 ### Options
 
+#### General
+
 | Option | Description | Default |
 |--------|-------------|---------|
-| `-m`, `--heuristic-method` | Heuristic method: 1 (no synergy), 2 (pairwise synergy), 3 (three-way synergy) | `2` |
-| `-i`, `--max-iterations` | Maximum number of heuristic iterations (-1 for unlimited) | `-1` |
-| `-o`, `--refinement` | Perform branch-and-bound refinement; incompatible with explicit `-i` and `-t` | off |
-| `-t`, `--improvement-threshold` | Stop heuristic iterations if the relative improvement is below this threshold | `0.0` |
-| `-s`, `--excluded-seqs-threshold` | Stop if excluding more sequences would make the excluded fraction exceed this threshold; also bounds refinement | `1.0` |
-| `-k`, `--keep-sequence` | Sequence to always retain (can be specified multiple times) | |
-| `-r`, `--report` | Report file path | |
-| `--retained-sequences` | Write a list of retained sequences to file | |
-| `--excluded-sequences` | Write a list of excluded sequences to file | |
-| `--log` | Write logs to file | |
-| `-v`, `--verbose` | Repeat to increase stderr logging verbosity (`-v` INFO, `-vv` DEBUG, `-vvv` TRACE) | ERROR and WARN |
 | `-h`, `--help` | Print help | |
 | `-V`, `--version` | Print version | |
+
+#### Optimization strategy
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-m`, `--heuristic-method` | Heuristic method (1, 2, or 3) | `2` |
+| `-o`, `--refinement` | Run branch-and-bound refinement | off |
+
+#### Optimization constraints
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-i`, `--max-iterations` | Iteration limit | `-1` |
+| `-t`, `--improvement-threshold` | Minimum improvement | `0.0` |
+| `-s`, `--excluded-seqs-threshold` | Exclusion cap | `1.0` |
+| `-k`, `--keep-sequence` | Keep sequence | |
+
+#### Reports and exports
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-r`, `--report` | Write Markdown report | |
+| `--retained-sequences` | Write retained IDs | |
+| `--excluded-sequences` | Write excluded IDs | |
+
+#### Runtime and logging
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--log` | Write logs to file | |
+| `-v`, `--verbose` | Increase verbosity (`-v` INFO, `-vv` DEBUG, `-vvv` TRACE) | ERROR and WARN |
+
+`-o` conflicts with explicitly supplied `-i`/`--max-iterations` and
+`-t`/`--improvement-threshold`. `-s`/`--excluded-seqs-threshold` also bounds
+refinement.
 
 ## Examples
 

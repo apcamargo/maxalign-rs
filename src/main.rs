@@ -35,6 +35,7 @@ const STYLES: Styles = Styles::styled()
     .usage(AnsiColor::Yellow.on_default().bold())
     .literal(AnsiColor::Yellow.on_default().bold())
     .placeholder(Style::new().dimmed());
+
 fn parse_max_iterations(s: &str) -> std::result::Result<u32, String> {
     if s == "-1" {
         return Ok(u32::MAX);
@@ -53,7 +54,7 @@ fn parse_threshold(s: &str) -> std::result::Result<f64, String> {
 }
 
 #[derive(Parser)]
-#[command(version, about, styles = STYLES, max_term_width = 88)]
+#[command(version, about, styles = STYLES, max_term_width = 79)]
 struct Cli {
     /// Input FASTA file
     #[arg(default_value = "-")]
@@ -63,52 +64,96 @@ struct Cli {
     #[arg(default_value = "-")]
     output: Output,
 
-    /// Heuristic method: 1 (no synergy), 2 (pairwise synergy), 3 (three-way synergy)
-    #[arg(short = 'm', long, default_value = "2", value_parser = clap::value_parser!(HeuristicMethod))]
+    /// Heuristic method (1, 2, or 3)
+    #[arg(
+        short = 'm',
+        long,
+        default_value = "2",
+        value_name = "METHOD",
+        value_parser = clap::value_parser!(HeuristicMethod),
+        help_heading = "Optimization strategy"
+    )]
     heuristic_method: HeuristicMethod,
 
-    /// Maximum number of heuristic iterations (-1 for unlimited iterations)
-    #[arg(short = 'i', long, default_value = "-1", value_parser = parse_max_iterations)]
-    max_iterations: u32,
-
-    /// Perform branch-and-bound refinement; incompatible with --max-iterations and --improvement-threshold
+    /// Run branch-and-bound refinement
     #[arg(
         short = 'o',
         long,
-        conflicts_with_all(["max_iterations", "improvement_threshold"])
+        conflicts_with_all(["max_iterations", "improvement_threshold"]),
+        help_heading = "Optimization strategy"
     )]
     refinement: bool,
 
-    /// Stop heuristic iterations if the relative improvement is below this threshold
-    #[arg(short = 't', long, default_value = "0.0", value_parser = parse_threshold)]
+    /// Iteration limit (-1 means unlimited)
+    #[arg(
+        short = 'i',
+        long,
+        default_value = "-1",
+        value_name = "N",
+        value_parser = parse_max_iterations,
+        help_heading = "Optimization constraints"
+    )]
+    max_iterations: u32,
+
+    /// Minimum improvement
+    #[arg(
+        short = 't',
+        long,
+        default_value = "0.0",
+        value_name = "RATIO",
+        value_parser = parse_threshold,
+        help_heading = "Optimization constraints"
+    )]
     improvement_threshold: f64,
 
-    /// Stop if excluding more sequences would make the excluded fraction exceed this threshold
-    #[arg(short = 's', long, default_value = "1.0", value_parser = parse_threshold)]
+    /// Exclusion cap
+    #[arg(
+        short = 's',
+        long,
+        default_value = "1.0",
+        value_name = "RATIO",
+        value_parser = parse_threshold,
+        help_heading = "Optimization constraints"
+    )]
     excluded_seqs_threshold: f64,
 
-    /// Sequence to always retain (can be specified multiple times)
-    #[arg(short = 'k', long)]
+    /// Keep sequence (pass multiple times)
+    #[arg(
+        short = 'k',
+        long,
+        value_name = "ID",
+        help_heading = "Optimization constraints"
+    )]
     keep_sequence: Vec<String>,
 
-    /// Report file path
-    #[arg(short = 'r', long)]
+    /// Write Markdown report
+    #[arg(
+        short = 'r',
+        long,
+        value_name = "PATH",
+        help_heading = "Reports and exports"
+    )]
     report: Option<PathBuf>,
 
-    /// Write a list of retained sequences to file
-    #[arg(long)]
+    /// Write retained IDs
+    #[arg(long, value_name = "PATH", help_heading = "Reports and exports")]
     retained_sequences: Option<PathBuf>,
 
-    /// Write a list of excluded sequences to file
-    #[arg(long)]
+    /// Write excluded IDs
+    #[arg(long, value_name = "PATH", help_heading = "Reports and exports")]
     excluded_sequences: Option<PathBuf>,
 
     /// Write logs to file
-    #[arg(long, value_name = "PATH")]
+    #[arg(long, value_name = "PATH", help_heading = "Runtime and logging")]
     log: Option<PathBuf>,
 
-    /// Repeat to increase logging verbosity (-v INFO, -vv DEBUG, -vvv TRACE)
-    #[arg(short = 'v', long, action = clap::ArgAction::Count)]
+    /// Increase verbosity (-v INFO, -vv DEBUG, -vvv TRACE)
+    #[arg(
+        short = 'v',
+        long,
+        action = clap::ArgAction::Count,
+        help_heading = "Runtime and logging"
+    )]
     verbose: u8,
 }
 

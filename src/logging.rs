@@ -11,7 +11,6 @@ use time::{OffsetDateTime, UtcOffset};
 use tracing::field::{Field, Visit};
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::filter::LevelFilter;
-use tracing_subscriber::filter::filter_fn;
 use tracing_subscriber::fmt::{
     FmtContext,
     format::{FormatEvent, FormatFields, Writer},
@@ -51,15 +50,15 @@ pub fn init(verbose: u8, log_path: Option<&Path>) -> Result<(), InitError> {
         let file_layer = tracing_subscriber::fmt::layer()
             .with_writer(Mutex::new(file))
             .with_ansi(false)
-            .event_format(CliLogFormatter::new(clock, false))
+            .event_format(CliLogFormatter::new(clock))
             .with_filter(level_filter(verbose));
         // Mirror errors to stderr in `--log` mode, but keep the same
         // terminal-detection ANSI policy as the normal stderr-only logger.
         let stderr_layer = tracing_subscriber::fmt::layer()
             .with_writer(std::io::stderr)
             .with_ansi(stderr_ansi_enabled)
-            .event_format(CliLogFormatter::new(clock, stderr_ansi_enabled))
-            .with_filter(filter_fn(|metadata| metadata.level() == &Level::ERROR));
+            .event_format(CliLogFormatter::new(clock))
+            .with_filter(LevelFilter::ERROR);
         let subscriber = tracing_subscriber::registry()
             .with(file_layer)
             .with(stderr_layer);
@@ -69,7 +68,7 @@ pub fn init(verbose: u8, log_path: Option<&Path>) -> Result<(), InitError> {
             .with_max_level(level_filter(verbose))
             .with_writer(std::io::stderr)
             .with_ansi(stderr_ansi_enabled)
-            .event_format(CliLogFormatter::new(clock, stderr_ansi_enabled))
+            .event_format(CliLogFormatter::new(clock))
             .finish();
 
         tracing::subscriber::set_global_default(subscriber)?;
@@ -91,58 +90,28 @@ fn level_filter(verbose: u8) -> LevelFilter {
 #[derive(Debug, Clone)]
 struct CliLogFormatter {
     clock: TimestampClock,
-    ansi_enabled: bool,
 }
 
 impl CliLogFormatter {
-    fn new(clock: TimestampClock, ansi_enabled: bool) -> Self {
-        Self {
-            clock,
-            ansi_enabled,
-        }
+    fn new(clock: TimestampClock) -> Self {
+        Self { clock }
     }
 
     fn timestamp(&self) -> String {
         self.clock.format_now()
     }
 
-    fn format_line(&self, level: Level, message: Option<&str>, fields: Option<&str>) -> String {
+    fn format_prefix(&self, writer: &mut Writer<'_>, level: Level) -> fmt::Result {
         let timestamp = self.timestamp();
-        let mut rendered = String::new();
 
-        rendered.push_str(&styled_text(
-            level_style(level),
-            &level.to_string(),
-            self.ansi_enabled,
-        ));
-        rendered.push(' ');
-        rendered.push_str(&styled_text(Style::new().dimmed(), "|", self.ansi_enabled));
-        rendered.push(' ');
-        rendered.push_str(&styled_text(
-            Style::new().dimmed(),
-            &timestamp,
-            self.ansi_enabled,
-        ));
-        rendered.push(' ');
-        rendered.push_str(&styled_text(Style::new().dimmed(), "|", self.ansi_enabled));
-        rendered.push(' ');
-
-        if let Some(message) = message {
-            rendered.push_str(message);
-        }
-
-        if let Some(fields) = fields.filter(|fields| !fields.is_empty()) {
-            if message.is_some() {
-                rendered.push_str("  ");
-            }
-            rendered.push_str(&styled_text(
-                Style::new().dimmed(),
-                fields,
-                self.ansi_enabled,
-            ));
-        }
-
-        rendered
+        write_styled(writer, level_style(level), level.as_str())?;
+        writer.write_char(' ')?;
+        write_styled(writer, Style::new().dimmed(), "|")?;
+        writer.write_char(' ')?;
+        write_styled(writer, Style::new().dimmed(), &timestamp)?;
+        writer.write_char(' ')?;
+        write_styled(writer, Style::new().dimmed(), "|")?;
+        writer.write_char(' ')
     }
 }
 
@@ -150,6 +119,8 @@ impl CliLogFormatter {
 struct TimestampClock {
     offset: UtcOffset,
     show_utc_suffix: bool,
+    #[cfg(test)]
+    fixed_timestamp: Option<&'static str>,
 }
 
 impl TimestampClock {
@@ -158,15 +129,33 @@ impl TimestampClock {
             Ok(offset) => Self {
                 offset,
                 show_utc_suffix: false,
+                #[cfg(test)]
+                fixed_timestamp: None,
             },
             Err(_) => Self {
                 offset: UtcOffset::UTC,
                 show_utc_suffix: true,
+                #[cfg(test)]
+                fixed_timestamp: None,
             },
         }
     }
 
+    #[cfg(test)]
+    fn fixed(timestamp: &'static str) -> Self {
+        Self {
+            offset: UtcOffset::UTC,
+            show_utc_suffix: false,
+            fixed_timestamp: Some(timestamp),
+        }
+    }
+
     fn format_now(self) -> String {
+        #[cfg(test)]
+        if let Some(timestamp) = self.fixed_timestamp {
+            return timestamp.to_string();
+        }
+
         let local_time = OffsetDateTime::now_utc().to_offset(self.offset);
         let mut timestamp = format!(
             "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
@@ -187,62 +176,55 @@ impl TimestampClock {
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
-struct EventContent {
+struct EventBodyVisitor {
     message: Option<String>,
-    fields: Vec<EventField>,
+    fields: String,
 }
 
-impl EventContent {
+impl EventBodyVisitor {
     fn from_event(event: &Event<'_>) -> Self {
-        let mut visitor = EventContentVisitor::default();
+        let mut visitor = Self::default();
         event.record(&mut visitor);
-        visitor.content
+        visitor
     }
 
-    fn fields_text(&self) -> String {
-        let mut rendered = String::new();
-
-        for (index, field) in self.fields.iter().enumerate() {
-            if index > 0 {
-                rendered.push(' ');
-            }
-            rendered.push_str(&field.name);
-            rendered.push('=');
-            rendered.push_str(&field.value);
-        }
-
-        rendered
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct EventField {
-    name: String,
-    value: String,
-}
-
-#[derive(Debug, Default)]
-struct EventContentVisitor {
-    content: EventContent,
-}
-
-impl EventContentVisitor {
     fn record_value(&mut self, field: &Field, value: String) {
-        let sanitized_value = value.replace('\u{1b}', "\\u{1b}");
+        let sanitized_value = if value.contains('\u{1b}') {
+            value.replace('\u{1b}', "\\u{1b}")
+        } else {
+            value
+        };
 
         if field.name() == "message" {
-            self.content.message = Some(sanitized_value);
+            self.message = Some(sanitized_value);
             return;
         }
 
-        self.content.fields.push(EventField {
-            name: field.name().trim_start_matches("r#").to_string(),
-            value: sanitized_value,
-        });
+        if !self.fields.is_empty() {
+            self.fields.push(' ');
+        }
+        self.fields.push_str(field.name().trim_start_matches("r#"));
+        self.fields.push('=');
+        self.fields.push_str(&sanitized_value);
+    }
+
+    fn write_body(&self, writer: &mut Writer<'_>) -> fmt::Result {
+        if let Some(message) = &self.message {
+            writer.write_str(message)?;
+        }
+
+        if !self.fields.is_empty() {
+            if self.message.is_some() {
+                writer.write_str("  ")?;
+            }
+            write_styled(writer, Style::new().dimmed(), &self.fields)?;
+        }
+
+        Ok(())
     }
 }
 
-impl Visit for EventContentVisitor {
+impl Visit for EventBodyVisitor {
     fn record_f64(&mut self, field: &Field, value: f64) {
         self.record_value(field, value.to_string());
     }
@@ -291,15 +273,9 @@ where
         mut writer: Writer<'_>,
         event: &Event<'_>,
     ) -> fmt::Result {
-        let content = EventContent::from_event(event);
-        let fields = (!content.fields.is_empty()).then(|| content.fields_text());
-        let line = self.format_line(
-            *event.metadata().level(),
-            content.message.as_deref(),
-            fields.as_deref(),
-        );
-
-        writer.write_str(&line)?;
+        let body = EventBodyVisitor::from_event(event);
+        self.format_prefix(&mut writer, *event.metadata().level())?;
+        body.write_body(&mut writer)?;
         writeln!(writer)
     }
 }
@@ -314,20 +290,51 @@ fn level_style(level: Level) -> Style {
     }
 }
 
-fn styled_text(style: Style, text: &str, ansi_enabled: bool) -> String {
-    if ansi_enabled {
-        style.paint(text).to_string()
+fn write_styled(writer: &mut Writer<'_>, style: Style, text: &str) -> fmt::Result {
+    if writer.has_ansi_escapes() {
+        write!(writer, "{}", style.paint(text))
     } else {
-        text.to_string()
+        writer.write_str(text)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{CliLogFormatter, TimestampClock, level_filter};
-    use time::UtcOffset;
-    use tracing::Level;
+    use std::io;
+    use std::sync::{Arc, Mutex};
     use tracing_subscriber::filter::LevelFilter;
+    use tracing_subscriber::layer::SubscriberExt;
+
+    const FIXED_TIMESTAMP: &str = "2026-04-23 11:03:42";
+
+    struct BufferWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl io::Write for BufferWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.0.lock().expect("buffer mutex poisoned").extend(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn capture_log(ansi_enabled: bool, emit: impl FnOnce()) -> String {
+        let buffer = Arc::new(Mutex::new(Vec::new()));
+        let writer_buffer = Arc::clone(&buffer);
+        let layer = tracing_subscriber::fmt::layer()
+            .with_writer(move || BufferWriter(Arc::clone(&writer_buffer)))
+            .with_ansi(ansi_enabled)
+            .event_format(CliLogFormatter::new(TimestampClock::fixed(FIXED_TIMESTAMP)));
+        let subscriber = tracing_subscriber::registry().with(layer);
+
+        tracing::subscriber::with_default(subscriber, emit);
+
+        let bytes = buffer.lock().expect("buffer mutex poisoned").clone();
+        String::from_utf8(bytes).expect("log output should be valid UTF-8")
+    }
 
     #[test]
     fn verbose_levels_enable_warn_by_default_and_trace_at_three_v() {
@@ -341,29 +348,67 @@ mod tests {
 
     #[test]
     fn ansi_line_contains_escape_sequences() {
-        let formatter = CliLogFormatter::new(
-            TimestampClock {
-                offset: UtcOffset::UTC,
-                show_utc_suffix: false,
-            },
-            true,
-        );
-        let line = formatter.format_line(Level::ERROR, Some("Command failed"), None);
+        let line = capture_log(true, || tracing::error!("Command failed"));
 
         assert!(line.contains('\u{1b}'));
     }
 
     #[test]
     fn plain_line_has_no_escape_sequences() {
-        let formatter = CliLogFormatter::new(
-            TimestampClock {
-                offset: UtcOffset::UTC,
-                show_utc_suffix: false,
-            },
-            false,
-        );
-        let line = formatter.format_line(Level::ERROR, Some("Command failed"), None);
+        let line = capture_log(false, || tracing::error!("Command failed"));
 
         assert!(!line.contains('\u{1b}'));
+    }
+
+    #[test]
+    fn message_only_event_uses_level_timestamp_message_layout() {
+        let line = capture_log(false, || tracing::info!("Loaded input alignment"));
+
+        assert_eq!(
+            line,
+            "INFO | 2026-04-23 11:03:42 | Loaded input alignment\n"
+        );
+    }
+
+    #[test]
+    fn message_and_fields_keep_message_before_flat_fields() {
+        let line = capture_log(false, || {
+            tracing::trace!(
+                iteration = 3_u64,
+                working_set_count = 18_u64,
+                "Selected heuristic candidate"
+            );
+        });
+
+        assert_eq!(
+            line,
+            "TRACE | 2026-04-23 11:03:42 | Selected heuristic candidate  iteration=3 working_set_count=18\n"
+        );
+    }
+
+    #[test]
+    fn field_only_event_has_no_extra_body_padding() {
+        let line = capture_log(false, || tracing::warn!(missing = "seq1"));
+
+        assert_eq!(line, "WARN | 2026-04-23 11:03:42 | missing=seq1\n");
+    }
+
+    #[test]
+    fn raw_identifier_prefixes_are_removed_from_field_names() {
+        let line = capture_log(false, || tracing::info!(r#type = "dna", "Raw field"));
+
+        assert_eq!(line, "INFO | 2026-04-23 11:03:42 | Raw field  type=dna\n");
+    }
+
+    #[test]
+    fn ansi_escape_characters_are_escaped_in_message_and_fields() {
+        let line = capture_log(false, || {
+            tracing::warn!(name = "bad\u{1b}[31m", "Hello\u{1b}[0m");
+        });
+
+        assert_eq!(
+            line,
+            "WARN | 2026-04-23 11:03:42 | Hello\\u{1b}[0m  name=bad\\u{1b}[31m\n"
+        );
     }
 }
