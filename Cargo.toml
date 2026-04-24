@@ -1,6 +1,6 @@
 [package]
 name = "maxalign-rs"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 description = "A Rust reimplementation of the MaxAlign algorithm for optimizing multiple sequence alignments by maximizing the alignment area"
 readme = "README.md"
