@@ -289,19 +289,16 @@ fn write_iterations_section(
         let mut cumulative_excluded = 0;
         let mut iterations = Vec::new();
         for (i, (excluded_seqs, align_area)) in iteration_data.iter().enumerate() {
+            let align_area = *align_area;
             cumulative_excluded += excluded_seqs.len();
             let remaining_seqs = initial_metrics.sequence_count - cumulative_excluded;
-            let freecols = if remaining_seqs > 0 {
-                align_area / remaining_seqs
-            } else {
-                0
-            };
+            let freecols = align_area.checked_div(remaining_seqs).unwrap_or(0);
             iterations.push(IterationRecord {
                 number: i + 1,
                 excluded_this_round: excluded_seqs.len(),
                 total_excluded: cumulative_excluded,
                 ungapped_columns: freecols,
-                alignment_area: *align_area,
+                alignment_area: align_area,
             });
         }
         writeln!(writer, "{}", as_table(&iterations)).map_err(write_err!(path))

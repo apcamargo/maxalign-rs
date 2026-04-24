@@ -4,6 +4,7 @@ use crate::alignment::{AlignmentMetrics, SetData, congruent_set_joining, subset_
 use crate::bitops::{
     bitwise_or, count_bits, count_bits_union, count_bits_union_triple, get_set_bit_indices, set_bit,
 };
+use std::cmp::Ordering;
 use std::collections::HashSet;
 use tracing::{info, trace};
 
@@ -45,6 +46,15 @@ pub struct HeuristicConfig {
     pub max_iterations: u32,
     pub improvement_threshold: f64,
     pub excluded_seqs_threshold: f64,
+}
+
+#[derive(Debug, Clone)]
+struct HeuristicCandidate {
+    excluded_set: Vec<u8>,
+    alignment_area: usize,
+    excluded_count: usize,
+    gap_count: usize,
+    efficiency: f64,
 }
 
 /// Returns whether excluding `excluded_count` sequences is allowed under the
@@ -125,28 +135,19 @@ pub fn run_heuristic(
             break;
         }
 
-        let (best_set, new_alignment_area) = find_greatest_impact_set(
+        let Some(candidate) = find_greatest_impact_set(
             &current_sets,
             &current_gaps,
             metrics.alignment_area,
             sequence_count,
             gap_free_columns,
             config.method,
-        );
-        let candidate_excluded_count = count_bits(&best_set);
-        trace!(
-            iteration = iterations_count + 1,
-            working_set_count = current_sets.len(),
-            sequence_count,
-            gap_free_columns,
-            candidate_excluded_count,
-            new_alignment_area,
-            area_delta = new_alignment_area.saturating_sub(metrics.alignment_area),
-            "Selected heuristic candidate"
-        );
+        ) else {
+            break;
+        };
 
         if config.improvement_threshold != 0.0 && metrics.alignment_area != 0 {
-            let improvement = (new_alignment_area as f64 - metrics.alignment_area as f64)
+            let improvement = (candidate.alignment_area as f64 - metrics.alignment_area as f64)
                 / metrics.alignment_area as f64;
             if improvement < config.improvement_threshold {
                 info!(
@@ -157,7 +158,7 @@ pub fn run_heuristic(
             }
         }
 
-        let next_excluded_count = state.excluded.len() + candidate_excluded_count;
+        let next_excluded_count = state.excluded.len() + candidate.excluded_count;
         if !is_excluded_count_allowed(
             next_excluded_count,
             num_orig_seqs,
@@ -171,11 +172,34 @@ pub fn run_heuristic(
             break;
         }
 
-        if metrics.alignment_area >= new_alignment_area {
+        if metrics.alignment_area >= candidate.alignment_area {
+            trace!(
+                iteration = iterations_count + 1,
+                working_set_count = current_sets.len(),
+                sequence_count,
+                gap_free_columns,
+                candidate_excluded_count = candidate.excluded_count,
+                new_alignment_area = candidate.alignment_area,
+                area_delta = candidate
+                    .alignment_area
+                    .saturating_sub(metrics.alignment_area),
+                "No heuristic candidate improved the alignment"
+            );
             break;
         }
 
-        let excluded_indices = get_set_bit_indices(&best_set, sequence_count);
+        trace!(
+            iteration = iterations_count + 1,
+            working_set_count = current_sets.len(),
+            sequence_count,
+            gap_free_columns,
+            candidate_excluded_count = candidate.excluded_count,
+            new_alignment_area = candidate.alignment_area,
+            area_delta = candidate.alignment_area - metrics.alignment_area,
+            "Selected heuristic candidate"
+        );
+
+        let excluded_indices = get_set_bit_indices(&candidate.excluded_set, sequence_count);
         let mut exseq = Vec::with_capacity(excluded_indices.len());
         for pointer in excluded_indices {
             let orig_idx = state.translation[pointer];
@@ -188,8 +212,8 @@ pub fn run_heuristic(
             .collect();
 
         metrics.sequence_count = state.translation.len();
-        metrics.alignment_area = new_alignment_area;
-        iteration_data.push((exseq, new_alignment_area));
+        metrics.alignment_area = candidate.alignment_area;
+        iteration_data.push((exseq, candidate.alignment_area));
         iterations_count += 1;
     }
 
@@ -197,7 +221,7 @@ pub fn run_heuristic(
 }
 
 /// Finds the set that, when excluded, provides the greatest improvement.
-#[allow(clippy::cast_precision_loss, clippy::float_cmp)]
+#[allow(clippy::cast_precision_loss)]
 fn find_greatest_impact_set(
     sets: &[Vec<u8>],
     gaps: &[Vec<u8>],
@@ -205,29 +229,40 @@ fn find_greatest_impact_set(
     sequence_count: usize,
     gap_free_columns: usize,
     method: HeuristicMethod,
-) -> (Vec<u8>, usize) {
-    let mut best_set = Vec::new();
-    let mut best_impact = 0;
-    let mut best_efficiency = -1.0;
-    let mut best_gap_count = 0;
+) -> Option<HeuristicCandidate> {
+    let mut best_candidate: Option<HeuristicCandidate> = None;
 
     let mut evaluate_candidate =
         |set_size: usize, gap_count: usize, candidate_fn: &dyn Fn() -> Vec<u8>| {
-            let this_impact = (sequence_count - set_size) * (gap_free_columns + gap_count);
-            let this_efficiency = (this_impact as f64 - current_area as f64) / set_size as f64;
+            debug_assert!(set_size > 0, "heuristic candidates must exclude sequences");
+            if set_size == 0 {
+                return;
+            }
 
-            if this_efficiency > best_efficiency
-                || (this_efficiency == best_efficiency && gap_count >= best_gap_count)
-            {
-                best_efficiency = this_efficiency;
-                best_impact = this_impact;
-                best_set = candidate_fn();
-                best_gap_count = gap_count;
+            let alignment_area = (sequence_count - set_size) * (gap_free_columns + gap_count);
+            let efficiency = (alignment_area as f64 - current_area as f64) / set_size as f64;
+
+            let should_replace = best_candidate.as_ref().is_none_or(|best| {
+                match efficiency.total_cmp(&best.efficiency) {
+                    Ordering::Greater => true,
+                    Ordering::Equal => gap_count >= best.gap_count,
+                    Ordering::Less => false,
+                }
+            });
+
+            if should_replace {
+                best_candidate = Some(HeuristicCandidate {
+                    excluded_set: candidate_fn(),
+                    alignment_area,
+                    excluded_count: set_size,
+                    gap_count,
+                    efficiency,
+                });
             }
         };
 
     for (i, set_i) in sets.iter().enumerate() {
-        evaluate_candidate(count_bits(set_i), count_bits(&gaps[i]), &|| set_i.to_vec());
+        evaluate_candidate(count_bits(set_i), count_bits(&gaps[i]), &|| set_i.clone());
 
         if method as u8 >= 2 {
             for j in 0..i {
@@ -250,7 +285,7 @@ fn find_greatest_impact_set(
         }
     }
 
-    (best_set, best_impact)
+    best_candidate
 }
 
 /// Creates working sets by filtering out excluded sequences.
