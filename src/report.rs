@@ -5,76 +5,81 @@ use crate::error::{Error, Result};
 use crate::fasta::get_record_accession_string;
 use crate::heuristic::HeuristicMethod;
 use itertools::Itertools;
-use markdown_tables::{MarkdownTableRow, as_table};
+use serde::Serialize;
 use std::collections::HashSet;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
-struct RunOption {
-    option: String,
-    value: String,
+#[derive(Serialize)]
+struct JsonReport {
+    run_options: RunOptions,
+    statistics: Statistics,
+    heuristic_iterations: Vec<IterationRecord>,
+    refinement: Option<RefinementReport>,
+    excluded_sequences: Vec<String>,
 }
 
-impl MarkdownTableRow for RunOption {
-    fn column_names() -> Vec<&'static str> {
-        vec!["Option", "Value"]
-    }
-
-    fn column_values(&self) -> Vec<String> {
-        vec![self.option.clone(), self.value.clone()]
-    }
+#[derive(Serialize)]
+struct RunOptions {
+    input_file: String,
+    output_file: String,
+    heuristic_method: u8,
+    max_iterations: Option<u32>,
+    improvement_threshold: f64,
+    excluded_sequences_threshold: f64,
+    keep_sequences: Vec<String>,
+    retained_sequences_file: Option<String>,
+    excluded_sequences_file: Option<String>,
 }
 
-struct Statistic {
-    metric: String,
+#[derive(Serialize)]
+struct Statistics {
+    sequence_count: MetricChange,
+    alignment_area: MetricChange,
+    gap_free_columns: MetricChange,
+    alignment_length: MetricChange,
+}
+
+#[derive(Serialize)]
+struct MetricChange {
     before: usize,
     after: usize,
     change: i64,
 }
 
-impl MarkdownTableRow for Statistic {
-    fn column_names() -> Vec<&'static str> {
-        vec!["Metric", "Before", "After", "Change"]
-    }
-
-    fn column_values(&self) -> Vec<String> {
-        vec![
-            self.metric.clone(),
-            self.before.to_string(),
-            self.after.to_string(),
-            format!("{:+}", self.change),
-        ]
-    }
-}
-
+#[derive(Serialize)]
 struct IterationRecord {
     number: usize,
     excluded_this_round: usize,
     total_excluded: usize,
-    ungapped_columns: usize,
+    gap_free_columns: usize,
     alignment_area: usize,
+    excluded_sequences: Vec<String>,
 }
 
-impl MarkdownTableRow for IterationRecord {
-    fn column_names() -> Vec<&'static str> {
-        vec![
-            "Iteration",
-            "Excluded in this iteration",
-            "Total excluded",
-            "Ungapped columns",
-            "Alignment area",
-        ]
-    }
+#[derive(Serialize)]
+struct RefinementReport {
+    outcome: RefinementOutcome,
+    bounded_by_excluded_sequences_threshold: bool,
+    heuristic_metrics: AlignmentMetricsReport,
+    final_metrics: AlignmentMetricsReport,
+}
 
-    fn column_values(&self) -> Vec<String> {
-        vec![
-            self.number.to_string(),
-            self.excluded_this_round.to_string(),
-            self.total_excluded.to_string(),
-            self.ungapped_columns.to_string(),
-            self.alignment_area.to_string(),
-        ]
-    }
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+enum RefinementOutcome {
+    HeuristicOptimal,
+    HeuristicOptimalWithinExcludedSequencesThreshold,
+    RetainedSequenceImprovement,
+    AlignmentAreaImprovement,
+}
+
+#[derive(Serialize)]
+struct AlignmentMetricsReport {
+    sequence_count: usize,
+    gap_free_columns: usize,
+    alignment_area: usize,
+    alignment_length: usize,
 }
 
 /// Configuration for generating a report.
@@ -102,295 +107,170 @@ pub struct ReportData<'a> {
     pub excluded: &'a HashSet<usize>,
 }
 
-/// Writes a detailed report of `MaxAlign` results.
-#[allow(clippy::cast_possible_wrap)]
+/// Writes a detailed JSON report of `MaxAlign` results.
 pub fn write_report(
     path: impl AsRef<Path>,
     config: &ReportConfig<'_>,
     data: &ReportData<'_>,
 ) -> Result<()> {
     let path = path.as_ref();
+    let report = build_report(config, data);
+    let serialized = serde_json::to_vec_pretty(&report).map_err(|e| Error::ReportSerialize {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
+
     let file = std::fs::File::create(path).map_err(|e| Error::ReportWrite {
         path: path.to_path_buf(),
         source: e,
     })?;
     let mut writer = BufWriter::new(file);
-
-    write_header(&mut writer, path)?;
-    write_options_section(&mut writer, config, path)?;
-    write_statistics_section(&mut writer, data.initial_metrics, data.final_metrics, path)?;
-    write_iterations_section(&mut writer, data.iteration_data, data.initial_metrics, path)?;
-    write_refinement_section(
-        &mut writer,
-        config,
-        data.heuristic_metrics,
-        data.final_metrics,
-        path,
-    )?;
-    write_excluded_section(&mut writer, data.headers, data.excluded, path)?;
-
-    writer.flush().map_err(|e| Error::ReportWrite {
-        path: path.to_path_buf(),
-        source: e,
-    })?;
-
-    Ok(())
-}
-
-macro_rules! write_err {
-    ($path:expr) => {
-        |e| Error::ReportWrite {
-            path: $path.to_path_buf(),
+    writer
+        .write_all(&serialized)
+        .and_then(|()| writer.write_all(b"\n"))
+        .and_then(|()| writer.flush())
+        .map_err(|e| Error::ReportWrite {
+            path: path.to_path_buf(),
             source: e,
-        }
-    };
+        })
 }
 
-fn write_header(writer: &mut impl Write, path: &Path) -> Result<()> {
-    writeln!(writer, "# MaxAlign Results\n").map_err(write_err!(path))
+fn build_report(config: &ReportConfig<'_>, data: &ReportData<'_>) -> JsonReport {
+    JsonReport {
+        run_options: RunOptions {
+            input_file: config.input_path.clone(),
+            output_file: config.output_path.clone(),
+            heuristic_method: config.heuristic_method as u8,
+            max_iterations: (config.max_iterations != u32::MAX).then_some(config.max_iterations),
+            improvement_threshold: config.improvement_threshold,
+            excluded_sequences_threshold: config.excluded_seqs_threshold,
+            keep_sequences: config.keep_sequence.to_vec(),
+            retained_sequences_file: optional_path(config.retained_sequences.as_deref()),
+            excluded_sequences_file: optional_path(config.excluded_sequences.as_deref()),
+        },
+        statistics: Statistics {
+            sequence_count: metric_change(
+                data.initial_metrics.sequence_count,
+                data.final_metrics.sequence_count,
+            ),
+            alignment_area: metric_change(
+                data.initial_metrics.alignment_area,
+                data.final_metrics.alignment_area,
+            ),
+            gap_free_columns: metric_change(
+                data.initial_metrics.gap_free_columns,
+                data.final_metrics.gap_free_columns,
+            ),
+            alignment_length: metric_change(
+                data.initial_metrics.alignment_length,
+                data.final_metrics.alignment_length,
+            ),
+        },
+        heuristic_iterations: iteration_records(
+            data.iteration_data,
+            data.initial_metrics,
+            data.headers,
+        ),
+        refinement: refinement_report(config, data.heuristic_metrics, data.final_metrics),
+        excluded_sequences: excluded_accessions(data.headers, data.excluded),
+    }
 }
 
-fn write_options_section(
-    writer: &mut impl Write,
-    config: &ReportConfig<'_>,
-    report_path: &Path,
-) -> Result<()> {
-    writeln!(writer, "## Run options\n").map_err(write_err!(report_path))?;
-
-    let max_iter_str = if config.max_iterations == u32::MAX {
-        "unlimited".to_string()
-    } else {
-        config.max_iterations.to_string()
-    };
-
-    let mut options = vec![
-        RunOption {
-            option: "Input file".to_string(),
-            value: config.input_path.clone(),
-        },
-        RunOption {
-            option: "Output file".to_string(),
-            value: config.output_path.clone(),
-        },
-        RunOption {
-            option: "Heuristic method".to_string(),
-            value: config.heuristic_method.to_string(),
-        },
-        RunOption {
-            option: "Max iterations".to_string(),
-            value: max_iter_str,
-        },
-        RunOption {
-            option: "Improvement threshold".to_string(),
-            value: config.improvement_threshold.to_string(),
-        },
-        RunOption {
-            option: "Excluded sequences threshold".to_string(),
-            value: config.excluded_seqs_threshold.to_string(),
-        },
-        RunOption {
-            option: "Refinement".to_string(),
-            value: config.refinement.to_string(),
-        },
-        RunOption {
-            option: "Keep sequences".to_string(),
-            value: if config.keep_sequence.is_empty() {
-                String::new()
-            } else {
-                config.keep_sequence.join(", ")
-            },
-        },
-    ];
-
-    if let Some(ref retained) = config.retained_sequences {
-        options.push(RunOption {
-            option: "Retained sequences file".to_string(),
-            value: retained.display().to_string(),
-        });
-    }
-
-    if let Some(ref excluded) = config.excluded_sequences {
-        options.push(RunOption {
-            option: "Excluded sequences file".to_string(),
-            value: excluded.display().to_string(),
-        });
-    }
-
-    options.push(RunOption {
-        option: "Report file".to_string(),
-        value: report_path.display().to_string(),
-    });
-
-    writeln!(writer, "{}", as_table(&options)).map_err(write_err!(report_path))
+fn optional_path(path: Option<&Path>) -> Option<String> {
+    path.map(|path| path.display().to_string())
 }
 
 #[allow(clippy::cast_possible_wrap)]
-fn write_statistics_section(
-    writer: &mut impl Write,
-    initial_metrics: &AlignmentMetrics,
-    final_metrics: &AlignmentMetrics,
-    path: &Path,
-) -> Result<()> {
-    writeln!(writer, "## Statistics\n").map_err(write_err!(path))?;
-
-    let sequences_change =
-        final_metrics.sequence_count as i64 - initial_metrics.sequence_count as i64;
-    let area_change = final_metrics.alignment_area as i64 - initial_metrics.alignment_area as i64;
-    let freecols_change =
-        final_metrics.gap_free_columns as i64 - initial_metrics.gap_free_columns as i64;
-    let totalcols_change =
-        final_metrics.alignment_length as i64 - initial_metrics.alignment_length as i64;
-
-    let statistics = vec![
-        Statistic {
-            metric: "Number of sequences".to_string(),
-            before: initial_metrics.sequence_count,
-            after: final_metrics.sequence_count,
-            change: sequences_change,
-        },
-        Statistic {
-            metric: "Alignment area".to_string(),
-            before: initial_metrics.alignment_area,
-            after: final_metrics.alignment_area,
-            change: area_change,
-        },
-        Statistic {
-            metric: "Ungapped columns".to_string(),
-            before: initial_metrics.gap_free_columns,
-            after: final_metrics.gap_free_columns,
-            change: freecols_change,
-        },
-        Statistic {
-            metric: "Total columns".to_string(),
-            before: initial_metrics.alignment_length,
-            after: final_metrics.alignment_length,
-            change: totalcols_change,
-        },
-    ];
-
-    writeln!(writer, "{}", as_table(&statistics)).map_err(write_err!(path))
-}
-
-fn write_iterations_section(
-    writer: &mut impl Write,
-    iteration_data: &[(Vec<usize>, usize)],
-    initial_metrics: &AlignmentMetrics,
-    path: &Path,
-) -> Result<()> {
-    writeln!(writer, "## Heuristic iterations\n").map_err(write_err!(path))?;
-
-    if iteration_data.is_empty() {
-        writeln!(
-            writer,
-            "No iterations performed. Alignment could not be improved.\n"
-        )
-        .map_err(write_err!(path))
-    } else {
-        let mut cumulative_excluded = 0;
-        let mut iterations = Vec::new();
-        for (i, (excluded_seqs, align_area)) in iteration_data.iter().enumerate() {
-            let align_area = *align_area;
-            cumulative_excluded += excluded_seqs.len();
-            let remaining_seqs = initial_metrics.sequence_count - cumulative_excluded;
-            let freecols = align_area.checked_div(remaining_seqs).unwrap_or(0);
-            iterations.push(IterationRecord {
-                number: i + 1,
-                excluded_this_round: excluded_seqs.len(),
-                total_excluded: cumulative_excluded,
-                ungapped_columns: freecols,
-                alignment_area: align_area,
-            });
-        }
-        writeln!(writer, "{}", as_table(&iterations)).map_err(write_err!(path))
+fn metric_change(before: usize, after: usize) -> MetricChange {
+    MetricChange {
+        before,
+        after,
+        change: after as i64 - before as i64,
     }
 }
 
-fn write_refinement_section(
-    writer: &mut impl Write,
+fn iteration_records(
+    iteration_data: &[(Vec<usize>, usize)],
+    initial_metrics: &AlignmentMetrics,
+    headers: &[Vec<u8>],
+) -> Vec<IterationRecord> {
+    let mut cumulative_excluded = 0;
+    let mut records = Vec::with_capacity(iteration_data.len());
+
+    for (i, (excluded_seqs, alignment_area)) in iteration_data.iter().enumerate() {
+        cumulative_excluded += excluded_seqs.len();
+        let remaining_seqs = initial_metrics.sequence_count - cumulative_excluded;
+        let gap_free_columns = alignment_area.checked_div(remaining_seqs).unwrap_or(0);
+        let excluded_sequences = excluded_seqs
+            .iter()
+            .map(|&idx| accession(headers, idx))
+            .collect();
+
+        records.push(IterationRecord {
+            number: i + 1,
+            excluded_this_round: excluded_seqs.len(),
+            total_excluded: cumulative_excluded,
+            gap_free_columns,
+            alignment_area: *alignment_area,
+            excluded_sequences,
+        });
+    }
+
+    records
+}
+
+fn refinement_report(
     config: &ReportConfig<'_>,
     heuristic_metrics: &AlignmentMetrics,
     final_metrics: &AlignmentMetrics,
-    path: &Path,
-) -> Result<()> {
+) -> Option<RefinementReport> {
     if !config.refinement {
-        return Ok(());
+        return None;
     }
 
-    writeln!(writer, "## Refinement\n").map_err(write_err!(path))?;
-    let bounded_refinement = config.excluded_seqs_threshold < 1.0;
-
-    if heuristic_metrics.alignment_area == final_metrics.alignment_area
+    let bounded_by_excluded_sequences_threshold = config.excluded_seqs_threshold < 1.0;
+    let outcome = if heuristic_metrics.alignment_area == final_metrics.alignment_area
         && final_metrics.sequence_count > heuristic_metrics.sequence_count
     {
-        writeln!(
-            writer,
-            "The heuristic solution was improved by the branch-and-bound algorithm{}. \
-             The alignment area remains {}, while the number of retained sequences \
-             increased from {} to {}.\n",
-            if bounded_refinement {
-                " within the configured excluded-sequence threshold"
-            } else {
-                ""
-            },
-            final_metrics.alignment_area,
-            heuristic_metrics.sequence_count,
-            final_metrics.sequence_count
-        )
-        .map_err(write_err!(path))
+        RefinementOutcome::RetainedSequenceImprovement
+    } else if heuristic_metrics.alignment_area == final_metrics.alignment_area
+        && bounded_by_excluded_sequences_threshold
+    {
+        RefinementOutcome::HeuristicOptimalWithinExcludedSequencesThreshold
     } else if heuristic_metrics.alignment_area == final_metrics.alignment_area {
-        writeln!(
-            writer,
-            "The solution found with the heuristic method is optimal{}{}. \
-             The alignment area remains {}.\n",
-            if bounded_refinement {
-                " within the configured excluded-sequence threshold"
-            } else {
-                ""
-            },
-            if bounded_refinement {
-                ""
-            } else {
-                ", matching the one determined by the branch-and-bound algorithm"
-            },
-            heuristic_metrics.alignment_area
-        )
-        .map_err(write_err!(path))
+        RefinementOutcome::HeuristicOptimal
     } else {
-        writeln!(
-            writer,
-            "The heuristic solution was improved by the branch-and-bound algorithm{}. \
-             The alignment area increased from {} to {}.\n",
-            if bounded_refinement {
-                " within the configured excluded-sequence threshold"
-            } else {
-                ""
-            },
-            heuristic_metrics.alignment_area,
-            final_metrics.alignment_area
-        )
-        .map_err(write_err!(path))
+        RefinementOutcome::AlignmentAreaImprovement
+    };
+
+    Some(RefinementReport {
+        outcome,
+        bounded_by_excluded_sequences_threshold,
+        heuristic_metrics: metrics_report(heuristic_metrics),
+        final_metrics: metrics_report(final_metrics),
+    })
+}
+
+fn metrics_report(metrics: &AlignmentMetrics) -> AlignmentMetricsReport {
+    AlignmentMetricsReport {
+        sequence_count: metrics.sequence_count,
+        gap_free_columns: metrics.gap_free_columns,
+        alignment_area: metrics.alignment_area,
+        alignment_length: metrics.alignment_length,
     }
 }
 
-fn write_excluded_section(
-    writer: &mut impl Write,
-    headers: &[Vec<u8>],
-    excluded: &HashSet<usize>,
-    path: &Path,
-) -> Result<()> {
-    writeln!(writer, "## Excluded sequences\n").map_err(write_err!(path))?;
+fn excluded_accessions(headers: &[Vec<u8>], excluded: &HashSet<usize>) -> Vec<String> {
+    excluded
+        .iter()
+        .sorted_unstable()
+        .map(|&idx| accession(headers, idx))
+        .collect()
+}
 
-    if excluded.is_empty() {
-        writeln!(writer, "No sequences were excluded.").map_err(write_err!(path))
-    } else {
-        // Write excluded sequences as a simple bullet list (no indices).
-        for name in excluded
-            .iter()
-            .sorted_unstable()
-            .map(|&idx| get_record_accession_string(&headers[idx]).unwrap_or_default())
-        {
-            writeln!(writer, "- {}", name).map_err(write_err!(path))?;
-        }
-        Ok(())
-    }
+fn accession(headers: &[Vec<u8>], idx: usize) -> String {
+    headers
+        .get(idx)
+        .and_then(|header| get_record_accession_string(header))
+        .unwrap_or_default()
 }

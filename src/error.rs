@@ -23,6 +23,13 @@ pub enum Error {
         source: io::Error,
     },
 
+    #[error("failed to serialize report to '{path}': {source}")]
+    ReportSerialize {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+
     #[error("failed to write headers list to '{path}': {source}")]
     HeadersListWrite {
         path: PathBuf,

@@ -46,7 +46,9 @@ fn parse_max_iterations(s: &str) -> std::result::Result<u32, String> {
 
 fn parse_threshold(s: &str) -> std::result::Result<f64, String> {
     let v: f64 = s.parse().map_err(|_| format!("`{s}` isn't a number"))?;
-    if v < 0.0 {
+    if !v.is_finite() {
+        Err("value must be finite".to_string())
+    } else if v < 0.0 {
         Err("value must be non-negative".to_string())
     } else {
         Ok(v)
@@ -126,7 +128,7 @@ struct Cli {
     )]
     keep_sequence: Vec<String>,
 
-    /// Write Markdown report
+    /// Write JSON report
     #[arg(
         short = 'r',
         long,
@@ -179,6 +181,14 @@ fn format_max_iterations(max_iterations: u32) -> String {
     } else {
         max_iterations.to_string()
     }
+}
+
+fn normalize_metrics_for_output(metrics: &mut AlignmentMetrics, sequences: &[Vec<u8>]) {
+    metrics.alignment_length = sequences.iter().map(Vec::len).max().unwrap_or(0);
+    metrics.gap_free_columns = metrics
+        .alignment_area
+        .checked_div(metrics.sequence_count)
+        .unwrap_or(0);
 }
 
 #[allow(clippy::too_many_lines)]
@@ -329,20 +339,23 @@ fn run(cli: &Cli) -> Result<()> {
 
     let (final_sequences, final_headers) =
         remove_all_gap_columns(&sequences, &sequence_data.headers, &final_excluded);
-
-    if !final_sequences.is_empty()
-        && let Some(final_alignment_length) = final_sequences.iter().map(Vec::len).max()
-    {
-        final_metrics.alignment_length = final_alignment_length;
-        final_metrics.gap_free_columns =
-            final_metrics.alignment_area / final_metrics.sequence_count;
-    }
+    normalize_metrics_for_output(&mut final_metrics, &final_sequences);
 
     let mut output = cli.output.clone();
     write_fasta(&final_sequences, &final_headers, &mut output)?;
     info!("Output written to {output_path}");
 
     if let Some(ref report_path) = cli.report {
+        let report_heuristic_metrics = if state.excluded == final_excluded {
+            final_metrics.clone()
+        } else {
+            let (heuristic_sequences, _) =
+                remove_all_gap_columns(&sequences, &sequence_data.headers, &state.excluded);
+            let mut report_heuristic_metrics = heuristic_metrics.clone();
+            normalize_metrics_for_output(&mut report_heuristic_metrics, &heuristic_sequences);
+            report_heuristic_metrics
+        };
+
         let config = ReportConfig {
             input_path: input_path.clone(),
             output_path: output_path.clone(),
@@ -358,7 +371,7 @@ fn run(cli: &Cli) -> Result<()> {
 
         let data = ReportData {
             initial_metrics: &initial_metrics,
-            heuristic_metrics: &heuristic_metrics,
+            heuristic_metrics: &report_heuristic_metrics,
             final_metrics: &final_metrics,
             iteration_data: &iteration_data,
             headers: &sequence_data.headers,
@@ -366,7 +379,7 @@ fn run(cli: &Cli) -> Result<()> {
         };
 
         write_report(report_path, &config, &data)?;
-        info!("Report written to {}", report_path.display());
+        info!("JSON report written to {}", report_path.display());
     }
 
     if let Some(ref path) = cli.retained_sequences {

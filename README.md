@@ -86,7 +86,7 @@ maxalign-rs [OPTIONS] [INPUT] [OUTPUT]
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `-r`, `--report` | Write Markdown report | |
+| `-r`, `--report` | Write JSON report | |
 | `--retained-sequences` | Write retained IDs | |
 | `--excluded-sequences` | Write excluded IDs | |
 
@@ -186,10 +186,10 @@ This ensures that `seq1`, `seq2`, and `seq3` will always be included in the fina
 
 ### Generate a report
 
-Generate a detailed Markdown report summarizing the optimization process, including the number of retained and excluded sequences, changes in alignment area across iterations, and the final optimization outcome:
+Generate a detailed JSON report summarizing the optimization process, including the number of retained and excluded sequences, changes in alignment area across iterations, and the final optimization outcome:
 
 ```sh
-maxalign-rs input.fasta output.fasta -r report.md
+maxalign-rs input.fasta output.fasta -r report.json
 ```
 
 ### Export sequence lists
