@@ -52,54 +52,52 @@ maxalign-rs [OPTIONS] [INPUT] [OUTPUT]
 
 ### Arguments
 
-| Argument | Description | Default |
-|----------|-------------|---------|
-| `INPUT` | Input FASTA file | `-` (stdin) |
-| `OUTPUT` | Output FASTA file | `-` (stdout) |
+| Argument | Description                       | Default      |
+| -------- | --------------------------------- | ------------ |
+| `INPUT`  | Input FASTA alignment.            | `-` (stdin)  |
+| `OUTPUT` | Output optimized FASTA alignment. | `-` (stdout) |
 
 ### Options
 
 #### General
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `-h`, `--help` | Print help | |
-| `-V`, `--version` | Print version | |
+| Option            | Description   | Default |
+| ----------------- | ------------- | ------- |
+| `-h`, `--help`    | Print help    |         |
+| `-V`, `--version` | Print version |         |
 
 #### Optimization strategy
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `-m`, `--heuristic-method` | Heuristic method (1, 2, or 3) | `2` |
-| `-o`, `--refinement` | Run branch-and-bound refinement | off |
+| Option                     | Description                                                                                      | Default |
+| -------------------------- | ------------------------------------------------------------------------------------------------ | ------- |
+| `-m`, `--heuristic-method` | Choose heuristic method `1`, `2`, or `3`. Higher values may find better results but take longer. | `2`     |
+| `-o`, `--refinement`       | Run exact refinement after the heuristic to improve or confirm the result.                       | off     |
 
 #### Optimization constraints
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `-i`, `--max-iterations` | Iteration limit | `-1` |
-| `-t`, `--improvement-threshold` | Minimum improvement | `0.0` |
-| `-s`, `--excluded-seqs-threshold` | Exclusion cap | `1.0` |
-| `-k`, `--keep-sequence` | Keep sequence | |
+| Option                            | Description                                                                           | Default |
+| --------------------------------- | ------------------------------------------------------------------------------------- | ------- |
+| `-i`, `--max-iterations`          | Maximum number of iterations for the heuristic. Use `-1` for no limit.                | `-1`    |
+| `-t`, `--improvement-threshold`   | Stop when the next iteration improves alignment area by less than this ratio.         | `0.0`   |
+| `-s`, `--excluded-seqs-threshold` | Maximum fraction of original sequences that may be excluded. `1.0` allows any number. | `1.0`   |
+| `-k`, `--keep-sequence`           | Always retain the sequence with this accession. Can be used multiple times.           |         |
 
 #### Reports and exports
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `-r`, `--report` | Write JSON report | |
-| `--retained-sequences` | Write retained IDs | |
-| `--excluded-sequences` | Write excluded IDs | |
+| Option                 | Description                                                     | Default |
+| ---------------------- | --------------------------------------------------------------- | ------- |
+| `-r`, `--report`       | Write a JSON report with settings, run details, and statistics. |         |
+| `--retained-sequences` | Write retained sequence accessions to a text file.              |         |
+| `--excluded-sequences` | Write excluded sequence accessions to a text file.              |         |
 
 #### Runtime and logging
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--log` | Write logs to file | |
-| `-v`, `--verbose` | Increase verbosity (`-v` INFO, `-vv` DEBUG, `-vvv` TRACE) | ERROR and WARN |
+| Option            | Description                                                       | Default        |
+| ----------------- | ----------------------------------------------------------------- | -------------- |
+| `--log`           | Write logs to a file instead of showing progress in the terminal. |                |
+| `-v`, `--verbose` | Increase log verbosity. Repeat for more verbose output.           | ERROR and WARN |
 
-`-o` conflicts with explicitly supplied `-i`/`--max-iterations` and
-`-t`/`--improvement-threshold`. `-s`/`--excluded-seqs-threshold` also bounds
-refinement.
+`-o` conflicts with explicitly supplied `-i`/`--max-iterations` and `-t`/`--improvement-threshold`. `-s`/`--excluded-seqs-threshold` also bounds refinement.
 
 ## Examples
 

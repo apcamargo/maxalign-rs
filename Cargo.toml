@@ -12,14 +12,14 @@ license = "GPL-3.0-only"
 clap = { version = "4.5.53", features = ["derive", "wrap_help"] }
 clio = { version = "0.3.5", features = ["clap-parse"] }
 itertools = "0.14.0"
-needletail = "0.6.3"
+needletail = "0.7.3"
 nu-ansi-term = "0.50.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0.17"
 time = { version = "0.3.47", features = ["local-offset"] }
-tracing = "0.1.41"
-tracing-subscriber = { version = "0.3.20", default-features = false, features = [
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = [
   "ansi",
   "fmt"
 ] }

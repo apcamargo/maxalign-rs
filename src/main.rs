@@ -58,15 +58,15 @@ fn parse_threshold(s: &str) -> std::result::Result<f64, String> {
 #[derive(Parser)]
 #[command(version, about, styles = STYLES, max_term_width = 79)]
 struct Cli {
-    /// Input FASTA file
+    /// Input FASTA alignment.
     #[arg(default_value = "-")]
     input: Input,
 
-    /// Output FASTA file
+    /// Output optimized FASTA alignment.
     #[arg(default_value = "-")]
     output: Output,
 
-    /// Heuristic method (1, 2, or 3)
+    /// Choose heuristic method 1, 2, or 3. Higher values may find better results but take longer.
     #[arg(
         short = 'm',
         long,
@@ -77,7 +77,7 @@ struct Cli {
     )]
     heuristic_method: HeuristicMethod,
 
-    /// Run branch-and-bound refinement
+    /// Run exact refinement after the heuristic to improve or confirm the result.
     #[arg(
         short = 'o',
         long,
@@ -86,7 +86,7 @@ struct Cli {
     )]
     refinement: bool,
 
-    /// Iteration limit (-1 means unlimited)
+    /// Maximum number of iterations for the heuristic. Use `-1` for no limit.
     #[arg(
         short = 'i',
         long,
@@ -97,7 +97,7 @@ struct Cli {
     )]
     max_iterations: u32,
 
-    /// Minimum improvement
+    /// Stop when the next iteration improves alignment area by less than this ratio.
     #[arg(
         short = 't',
         long,
@@ -108,7 +108,7 @@ struct Cli {
     )]
     improvement_threshold: f64,
 
-    /// Exclusion cap
+    /// Maximum fraction of original sequences that may be excluded. 1.0 allows any number.
     #[arg(
         short = 's',
         long,
@@ -119,7 +119,7 @@ struct Cli {
     )]
     excluded_seqs_threshold: f64,
 
-    /// Keep sequence (pass multiple times)
+    /// Always retain the sequence with this accession. Can be used multiple times.
     #[arg(
         short = 'k',
         long,
@@ -128,7 +128,7 @@ struct Cli {
     )]
     keep_sequence: Vec<String>,
 
-    /// Write JSON report
+    /// Write a JSON report with settings, run details, and statistics.
     #[arg(
         short = 'r',
         long,
@@ -137,19 +137,19 @@ struct Cli {
     )]
     report: Option<PathBuf>,
 
-    /// Write retained IDs
+    /// Write retained sequence accessions to a text file.
     #[arg(long, value_name = "PATH", help_heading = "Reports and exports")]
     retained_sequences: Option<PathBuf>,
 
-    /// Write excluded IDs
+    /// Write excluded sequence accessions to a text file.
     #[arg(long, value_name = "PATH", help_heading = "Reports and exports")]
     excluded_sequences: Option<PathBuf>,
 
-    /// Write logs to file
+    /// Write logs to a file instead of showing progress in the terminal.
     #[arg(long, value_name = "PATH", help_heading = "Runtime and logging")]
     log: Option<PathBuf>,
 
-    /// Increase verbosity (-v INFO, -vv DEBUG, -vvv TRACE)
+    /// Increase log verbosity. Repeat for more verbose output.
     #[arg(
         short = 'v',
         long,
