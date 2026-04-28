@@ -133,16 +133,16 @@ struct Cli {
         short = 'r',
         long,
         value_name = "PATH",
-        help_heading = "Reports and exports"
+        help_heading = "Additional outputs"
     )]
     report: Option<PathBuf>,
 
     /// Write retained sequence accessions to a text file.
-    #[arg(long, value_name = "PATH", help_heading = "Reports and exports")]
+    #[arg(long, value_name = "PATH", help_heading = "Additional outputs")]
     retained_sequences: Option<PathBuf>,
 
     /// Write excluded sequence accessions to a text file.
-    #[arg(long, value_name = "PATH", help_heading = "Reports and exports")]
+    #[arg(long, value_name = "PATH", help_heading = "Additional outputs")]
     excluded_sequences: Option<PathBuf>,
 
     /// Write logs to a file instead of showing progress in the terminal.

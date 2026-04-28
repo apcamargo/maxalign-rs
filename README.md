@@ -82,7 +82,7 @@ maxalign-rs [OPTIONS] [INPUT] [OUTPUT]
 | `-s`, `--excluded-seqs-threshold` | Maximum fraction of original sequences that may be excluded. `1.0` allows any number. | `1.0`   |
 | `-k`, `--keep-sequence`           | Always retain the sequence with this accession. Can be used multiple times.           |         |
 
-#### Reports and exports
+#### Additional outputs
 
 | Option                 | Description                                                     | Default |
 | ---------------------- | --------------------------------------------------------------- | ------- |
